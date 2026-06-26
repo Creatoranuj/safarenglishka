@@ -1,0 +1,1086 @@
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "../integrations/supabase/client";
+import { useAuth } from "../contexts/AuthContext";
+import Header from "../components/Layout/Header";
+import Sidebar from "../components/Layout/Sidebar";
+import { Button } from "../components/ui/button";
+import { ScrollArea } from "../components/ui/scroll-area";
+import {
+  Play, BookOpen,
+  PanelLeftOpen, PanelLeftClose, X, Search,
+  LayoutList, LayoutGrid, Trophy
+} from "lucide-react";
+import { cn } from "../lib/utils";
+import { toast } from "sonner";
+import { Breadcrumbs } from "../components/course/Breadcrumbs";
+import { ChapterCard } from "../components/course/ChapterCard";
+import { LectureRow } from "../components/course";
+import { useLessonNotesCounts } from "../hooks/useLessonNotesCounts";
+import { LessonAttachmentsSheet } from "../components/lesson/LessonAttachmentsSheet";
+import { downloadAllLessonNotes } from "../utils/downloadLessonNotes";
+
+interface Lesson {
+  id: string;
+  title: string;
+  videoUrl: string;
+  description: string | null;
+  overview: string | null;
+  isLocked: boolean | null;
+  lectureType: string | null;
+  position: number | null;
+  youtubeId: string | null;
+  createdAt: string | null;
+  duration: number | null;
+  chapterId: string | null;
+  classPdfUrl: string | null;
+  thumbnailUrl: string | null;
+}
+
+interface Course {
+  id: number;
+  title: string;
+  description: string | null;
+  grade: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+}
+
+interface Chapter {
+  id: string;
+  title: string;
+  code: string;
+  position: number;
+  parent_id: string | null;
+  lessonCount: number;
+  completedLessons: number;
+  thumbnailUrl: string | null;
+}
+
+type ContentType = "all" | "lectures" | "pdfs" | "dpp" | "notes";
+
+// ── Static constants outside component — never recreated ──────────────────────
+const typeMapping: Record<ContentType, string[]> = {
+  all: [],
+  lectures: ["VIDEO"],
+  pdfs: ["PDF"],
+  dpp: ["DPP"],
+  notes: ["NOTES"],
+};
+
+const tabs: { id: ContentType; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "lectures", label: "Lectures" },
+  { id: "pdfs", label: "PDFs" },
+  { id: "dpp", label: "DPPs" },
+  { id: "notes", label: "Notes" },
+];
+
+// ── Derives exact chapter completion counts from the source-of-truth sets ──────
+// Prevents double-counting on re-entry, hot-reload, or concurrent updates.
+const recomputeChapterCounts = (
+  completedSet: Set<string>,
+  allLessons: { id: string; chapterId: string | null }[],
+  prevChapters: Chapter[]
+): Chapter[] =>
+  prevChapters.map(ch => {
+    if (ch.id === "__all__") {
+      return { ...ch, completedLessons: allLessons.filter(l => completedSet.has(l.id)).length };
+    }
+    const chLessons = allLessons.filter(l => l.chapterId === ch.id);
+    return { ...ch, completedLessons: chLessons.filter(l => completedSet.has(l.id)).length };
+  });
+
+const MyCourseDetail = () => {
+  const navigate = useNavigate();
+  const { courseId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user, profile, isAdmin, isTeacher } = useAuth();
+  const isAdminOrTeacher = isAdmin || isTeacher;
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [courseSidebarOpen, setCourseSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [lessonSearch, setLessonSearch] = useState("");
+  const progressMarkedRef = useRef<Set<string>>(new Set());
+  const [course, setCourse] = useState<Course | null>(null);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [allChapters, setAllChapters] = useState<Chapter[]>([]);
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+  const [parentChapterStack, setParentChapterStack] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<ContentType>("all");
+  const [hasPurchased, setHasPurchased] = useState(false);
+  const [chapterTab, setChapterTab] = useState<"chapters" | "material">("chapters");
+  const [viewMode, setViewMode] = useState<"card" | "list">(() => {
+    try { return (localStorage.getItem("nb_lesson_view") as "card" | "list") || "card"; } catch { return "card"; }
+  });
+
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [notesSheetLesson, setNotesSheetLesson] = useState<Lesson | null>(null);
+  const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set());
+  const [lastWatchedLessonId, setLastWatchedLessonId] = useState<string | null>(null);
+
+  const handleViewModeChange = useCallback((mode: "card" | "list") => {
+    setViewMode(mode);
+    try { localStorage.setItem("nb_lesson_view", mode); } catch {}
+  }, []);
+
+  // ── React-Query fetch (cached + offline-first via queryPersister) ──────────
+  // Replaces the prior manual useEffect+useState fetch chain. Caches the
+  // course bundle for 2min stale / 10min gc so back-nav is instant. The
+  // global queryPersister snapshots it to Preferences so a cold reopen
+  // without network paints last-known content immediately.
+  const courseQuery = useQuery({
+    queryKey: ["my-course-detail", courseId, user?.id ?? null],
+    enabled: !!courseId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const cid = Number(courseId);
+
+      const [courseRes, enrollmentRes, allChaptersRes, lessonsRes, progressRes] = await Promise.all([
+        supabase.from("courses").select("*").eq("id", cid).single(),
+        user?.id
+          ? supabase.from("enrollments").select("id")
+              .eq("user_id", user.id).eq("course_id", cid).eq("status", "active").maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase.from("chapters").select("*").eq("course_id", cid).order("position", { ascending: true }),
+        supabase.from("lessons").select("*").eq("course_id", cid).order("position", { ascending: true }),
+        user?.id
+          ? supabase.from("user_progress")
+              .select("lesson_id, last_watched_at")
+              .eq("user_id", user.id).eq("course_id", cid).eq("completed", true)
+              .order("last_watched_at", { ascending: false })
+          : Promise.resolve({ data: null }),
+      ]);
+
+      if (courseRes.error) throw courseRes.error;
+      if (lessonsRes.error) throw lessonsRes.error;
+
+      const cd: any = courseRes.data;
+      const courseObj: Course = {
+        id: cd.id, title: cd.title, description: cd.description,
+        grade: cd.grade, imageUrl: cd.image_url, thumbnailUrl: cd.thumbnail_url,
+      };
+
+      const mappedLessons: Lesson[] = (lessonsRes.data || []).map((l: any, idx: number) => ({
+        id: l.id, title: l.title, videoUrl: l.video_url, description: l.description,
+        overview: l.overview, isLocked: l.is_locked, lectureType: l.lecture_type || "VIDEO",
+        position: l.position || idx + 1, youtubeId: l.youtube_id, createdAt: l.created_at,
+        duration: l.duration, chapterId: l.chapter_id,
+        classPdfUrl: l.class_pdf_url ?? null,
+        thumbnailUrl: l.thumbnail_url ?? null,
+      }));
+
+      const completedRows = (progressRes as any).data as { lesson_id: string }[] | null;
+      const completedSet = new Set<string>(completedRows?.map(p => p.lesson_id) ?? []);
+      const lastWatched = completedRows?.[0]?.lesson_id ?? null;
+
+      const allChaptersList = allChaptersRes.data || [];
+      const childrenMap: Record<string, string[]> = {};
+      allChaptersList.forEach((ch: any) => {
+        if (ch.parent_id) {
+          (childrenMap[ch.parent_id] ||= []).push(ch.id);
+        }
+      });
+      const getDescendantIds = (parentId: string): string[] => {
+        const children = childrenMap[parentId] || [];
+        return children.flatMap(c => [c, ...getDescendantIds(c)]);
+      };
+
+      const lessonCountMap: Record<string, number> = {};
+      const completedCountMap: Record<string, number> = {};
+      mappedLessons.forEach(l => {
+        if (l.chapterId) {
+          lessonCountMap[l.chapterId] = (lessonCountMap[l.chapterId] || 0) + 1;
+          if (completedSet.has(l.id)) {
+            completedCountMap[l.chapterId] = (completedCountMap[l.chapterId] || 0) + 1;
+          }
+        }
+      });
+
+      const totalLessons = mappedLessons.length;
+      const totalCompleted = mappedLessons.filter(l => completedSet.has(l.id)).length;
+
+      const allContentChapter: Chapter = {
+        id: "__all__", code: "ALL", title: "All Content", position: -1, parent_id: null,
+        lessonCount: totalLessons, completedLessons: totalCompleted, thumbnailUrl: null,
+      };
+
+      const mappedChapters: Chapter[] = allChaptersList.map((ch: any) => {
+        const ids = [ch.id, ...getDescendantIds(ch.id)];
+        return {
+          id: ch.id, code: ch.code, title: ch.title, position: ch.position, parent_id: ch.parent_id,
+          lessonCount: ids.reduce((s, cid) => s + (lessonCountMap[cid] || 0), 0),
+          completedLessons: ids.reduce((s, cid) => s + (completedCountMap[cid] || 0), 0),
+          thumbnailUrl: ch.thumbnail_url ?? null,
+        };
+      });
+
+      const topLevel = mappedChapters.filter(ch => !ch.parent_id);
+
+      return {
+        course: courseObj,
+        hasPurchased: !!(enrollmentRes as any).data,
+        lessons: mappedLessons,
+        allChapters: mappedChapters,
+        chapters: [allContentChapter, ...topLevel],
+        completedSet,
+        lastWatched,
+      };
+    },
+  });
+
+  // Bridge react-query data into existing useState so the rest of the
+  // component (optimistic toggles, recomputeChapterCounts) keeps working
+  // without invasive refactors. Setters are no-op when values are identical.
+  useEffect(() => {
+    const d = courseQuery.data;
+    if (!d) return;
+    setCourse(d.course);
+    setHasPurchased(d.hasPurchased);
+    setLessons(d.lessons);
+    setAllChapters(d.allChapters);
+    setChapters(d.chapters);
+    // Guard: react-query persister serializes Set → plain object on rehydrate,
+    // which would crash `.has()` calls downstream. Always coerce back to Set.
+    setCompletedLessonIds(
+      d.completedSet instanceof Set
+        ? d.completedSet
+        : new Set<string>(Array.isArray(d.completedSet) ? d.completedSet : Object.keys(d.completedSet ?? {}))
+    );
+    setLastWatchedLessonId(d.lastWatched);
+  }, [courseQuery.data]);
+
+  useEffect(() => {
+    if (courseQuery.error) {
+      console.error("Error fetching course data:", courseQuery.error);
+      toast.error("Could not load course content");
+    }
+  }, [courseQuery.error]);
+
+  const loading = courseQuery.isPending;
+
+  // Deep-link: redirect lesson param to LessonView
+  useEffect(() => {
+    const lessonId = searchParams.get("lesson");
+    if (lessonId && lessons.length > 0 && courseId) {
+      navigate(`/classes/${courseId}/lessons?lessonId=${lessonId}&from=my-courses`, { replace: true });
+    }
+  }, [searchParams, lessons, courseId, navigate]);
+
+  // ── Memoised derived values — computed once per dependency change ──────────
+  const selectedChapter = useMemo(
+    () => allChapters.find(ch => ch.id === selectedChapterId) || chapters.find(ch => ch.id === selectedChapterId),
+    [allChapters, chapters, selectedChapterId]
+  );
+
+  // Sub-chapters of the currently selected chapter
+  const subChaptersOfSelected = useMemo(
+    () => selectedChapterId && selectedChapterId !== "__all__"
+      ? allChapters.filter(ch => ch.parent_id === selectedChapterId).sort((a, b) => a.position - b.position)
+      : [],
+    [allChapters, selectedChapterId]
+  );
+
+  const hasSubChapters = subChaptersOfSelected.length > 0;
+
+  const chapterLessons = useMemo(
+    () =>
+      !selectedChapterId || selectedChapterId === "__all__"
+        ? lessons
+        : lessons.filter(l => l.chapterId === selectedChapterId),
+    [lessons, selectedChapterId]
+  );
+
+  // Map of which lessons have a class PDF (used by counts hook + PDF filter)
+  const classPdfMap = useMemo(() => {
+    const m: Record<string, boolean> = {};
+    chapterLessons.forEach(l => { if (l.classPdfUrl) m[l.id] = true; });
+    return m;
+  }, [chapterLessons]);
+
+  const chapterLessonIds = useMemo(() => chapterLessons.map(l => l.id), [chapterLessons]);
+  const attachmentCounts = useLessonNotesCounts(chapterLessonIds, classPdfMap);
+
+  const filteredLessons = useMemo(() => {
+    const isPdfLike = (l: typeof chapterLessons[number]) =>
+      (l.lectureType || "VIDEO") === "PDF" ||
+      !!l.classPdfUrl ||
+      (attachmentCounts[l.id] || 0) > 0;
+
+    let typeMatch: typeof chapterLessons;
+    if (activeTab === "all") {
+      typeMatch = chapterLessons;
+    } else if (activeTab === "pdfs") {
+      typeMatch = chapterLessons.filter(isPdfLike);
+    } else {
+      typeMatch = chapterLessons.filter(l => typeMapping[activeTab].includes(l.lectureType || "VIDEO"));
+    }
+    if (!lessonSearch.trim()) return typeMatch;
+    const q = lessonSearch.toLowerCase();
+    return typeMatch.filter(l => l.title.toLowerCase().includes(q));
+  }, [chapterLessons, activeTab, lessonSearch, attachmentCounts]);
+
+  const tabCounts = useMemo(() => ({
+    all: chapterLessons.length,
+    lectures: chapterLessons.filter(l => l.lectureType === "VIDEO").length,
+    pdfs: chapterLessons.filter(l =>
+      (l.lectureType || "VIDEO") === "PDF" ||
+      !!l.classPdfUrl ||
+      (attachmentCounts[l.id] || 0) > 0
+    ).length,
+    dpp: chapterLessons.filter(l => l.lectureType === "DPP").length,
+    notes: chapterLessons.filter(l => l.lectureType === "NOTES").length,
+  }), [chapterLessons, attachmentCounts]);
+
+  const filteredSidebarChapters = useMemo(() => {
+    if (!sidebarSearch.trim()) return chapters;
+    const q = sidebarSearch.toLowerCase();
+    return chapters.filter(
+      ch => ch.title.toLowerCase().includes(q) || ch.code.toLowerCase().includes(q)
+    );
+  }, [chapters, sidebarSearch]);
+
+  // ── Memoised breadcrumbs with stack ─────────────────────────────────────
+  const stackBreadcrumbs = useMemo(() => {
+    const segs: { label: string; href?: string; onClick?: () => void }[] = [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "My Courses", href: "/my-courses" },
+    ];
+    if (course) segs.push({ label: course.title, href: `/my-courses/${courseId}` });
+    parentChapterStack.forEach((parentId, idx) => {
+      const ch = allChapters.find(c => c.id === parentId);
+      if (!ch) return;
+      // Click pops the stack to this level so the breadcrumb is consistent
+      // with the in-page drill-down history (matches Android back behaviour).
+      segs.push({
+        label: ch.title,
+        onClick: () => {
+          setParentChapterStack(prev => prev.slice(0, idx));
+          setSelectedChapterId(parentId);
+          setLessonSearch("");
+        },
+      });
+    });
+    if (selectedChapter && selectedChapter.id !== "__all__") {
+      segs.push({ label: selectedChapter.title });
+    }
+    return segs;
+  }, [course, courseId, parentChapterStack, allChapters, selectedChapter]);
+
+  const chapterBreadcrumbs = useMemo(() => [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "My Courses", href: "/my-courses" },
+    ...(course ? [{ label: course.title }] : []),
+  ], [course]);
+
+  const playerBreadcrumbs = useMemo(() => [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "My Courses", href: "/my-courses" },
+    ...(course ? [{ label: course.title, href: `/my-courses/${courseId}` }] : []),
+    ...(selectedLesson ? [{ label: selectedLesson.title }] : []),
+  ], [course, courseId, selectedLesson]);
+
+  // ── Memoised handlers — stable references across renders ──────────────────
+  const handleContentClick = useCallback((lesson: Lesson) => {
+    if (lesson.isLocked && !hasPurchased && !isAdminOrTeacher) {
+      toast.error("This content is locked. Please purchase the course.");
+      navigate(`/buy-course?id=${courseId}`);
+      return;
+    }
+    // Navigate to premium LessonView for ALL content types
+    navigate(`/classes/${courseId}/lessons?lessonId=${lesson.id}&from=my-courses`);
+  }, [hasPurchased, isAdminOrTeacher, courseId, navigate]);
+
+  // ── id-keyed lesson lookup + stable row handlers ───────────────────────
+  // Audit fix #7: `LectureRow` is memo'd by props; we therefore must pass
+  // stable callback identities. Each handler accepts a lesson id, looks the
+  // lesson up via `lessonsByIdRef`, and delegates. Both refs and useCallback
+  // deps are intentionally minimal so the rows skip reconciliation on
+  // unrelated state changes (search keystrokes, tab switches).
+  const lessonsByIdRef = useRef<Map<string, Lesson>>(new Map());
+  useEffect(() => {
+    const m = new Map<string, Lesson>();
+    for (const l of lessons) m.set(l.id, l);
+    lessonsByIdRef.current = m;
+  }, [lessons]);
+
+  const handleRowSelect = useCallback((id: string) => {
+    const lesson = lessonsByIdRef.current.get(id);
+    if (lesson) handleContentClick(lesson);
+  }, [handleContentClick]);
+
+  const handleRowNotes = useCallback((id: string) => {
+    const lesson = lessonsByIdRef.current.get(id);
+    if (lesson) setNotesSheetLesson(lesson);
+  }, []);
+
+  const handleRowDownload = useCallback(async (id: string) => {
+    const lesson = lessonsByIdRef.current.get(id);
+    if (!lesson) return;
+    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+    const toastId = toast.loading(`Saving "${lesson.title}" notes…`);
+    try {
+      const r = await downloadAllLessonNotes(lesson.id);
+      if (r.total === 0) {
+        toast.info("No notes attached to this lesson", { id: toastId });
+      } else if (r.saved === 0) {
+        toast.error("Download failed", { id: toastId });
+      } else {
+        toast.success(
+          isNative
+            ? `Saved ${r.saved}/${r.total} to Downloads`
+            : `Downloaded ${r.saved}/${r.total} file(s)`,
+          { id: toastId },
+        );
+      }
+    } catch {
+      toast.error("Download failed", { id: toastId });
+    }
+  }, []);
+
+
+  const handleClosePlayer = useCallback(() => {
+    setSelectedLesson(null);
+    setSearchParams({});
+    setLessonSearch("");
+  }, [setSearchParams]);
+
+  // ── Step back one in-page level: lesson → chapter → parent → root.
+  // Used by Breadcrumb back AND hardware-back popstate.
+  const closeOneLevel = useCallback((): boolean => {
+    if (selectedLesson) {
+      handleClosePlayer();
+      return true;
+    }
+    if (selectedChapterId) {
+      if (parentChapterStack.length) {
+        const stack = [...parentChapterStack];
+        const prev = stack.pop()!;
+        setParentChapterStack(stack);
+        setSelectedChapterId(prev);
+      } else {
+        setSelectedChapterId(null);
+      }
+      setLessonSearch("");
+      return true;
+    }
+    return false;
+  }, [selectedLesson, selectedChapterId, parentChapterStack, handleClosePlayer]);
+
+  // Overlay sentinel: while the user is drilled into a lesson or chapter,
+  // push ONE history entry so the Android hardware back button pops one
+  // in-page level instead of leaving the route entirely.
+  //
+  // CRITICAL: we must not re-push / re-pop on every internal drill change
+  // (e.g. Tense → Tense/Present). Doing so causes `history.back()` in the
+  // cleanup to fire a popstate that the freshly-mounted listener catches,
+  // which then runs `closeOneLevel` and kicks the user back out of the
+  // folder they just entered. So: track the sentinel via refs and only
+  // mutate history on the drilled ↔ not-drilled transition.
+  const isDrilled = Boolean(selectedLesson || selectedChapterId);
+  const sentinelActiveRef = useRef(false);
+  const closeOneLevelRef = useRef(closeOneLevel);
+  useEffect(() => { closeOneLevelRef.current = closeOneLevel; }, [closeOneLevel]);
+
+  useEffect(() => {
+    if (!isDrilled) return;
+    if (sentinelActiveRef.current) return; // already mounted, keep one sentinel
+    sentinelActiveRef.current = true;
+    window.history.pushState({ overlay: true }, "");
+    const onPop = () => { closeOneLevelRef.current(); };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      sentinelActiveRef.current = false;
+      if (window.history.state?.overlay) {
+        // Pop the sentinel we pushed so the back stack is balanced.
+        window.history.back();
+      }
+    };
+  }, [isDrilled]);
+
+
+  // ── Toggle complete (works for VIDEO/PDF/DPP/NOTES/TEST) ─────────────────
+  // Reads completed-set + lessons through refs so the callback identity stays
+  // stable across renders. Without this, every toggle would recreate the
+  // function and bust `React.memo(LectureRow)` for every row — making the
+  // course detail list jank on long chapters. (Audit fix #7.)
+  const completedRef = useRef(completedLessonIds);
+  const lessonsRef = useRef(lessons);
+  useEffect(() => { completedRef.current = completedLessonIds; }, [completedLessonIds]);
+  useEffect(() => { lessonsRef.current = lessons; }, [lessons]);
+
+  const handleToggleCompleteById = useCallback(async (lessonId: string) => {
+    if (!user || !courseId) return;
+    const wasCompleted = completedRef.current.has(lessonId);
+
+    // Optimistic UI
+    setCompletedLessonIds(prev => {
+      const next = new Set(prev);
+      if (wasCompleted) next.delete(lessonId); else next.add(lessonId);
+      setChapters(chs => recomputeChapterCounts(next, lessonsRef.current, chs));
+      return next;
+    });
+
+    try {
+      if (wasCompleted) {
+        const { error } = await supabase
+          .from("user_progress")
+          .update({ completed: false, last_watched_at: new Date().toISOString() })
+          .eq("user_id", user.id)
+          .eq("lesson_id", lessonId);
+        if (error) throw error;
+        progressMarkedRef.current.delete(lessonId);
+        toast.success("Marked as not done");
+      } else {
+        const { error } = await supabase.from("user_progress").upsert({
+          user_id: user.id,
+          lesson_id: lessonId,
+          course_id: Number(courseId),
+          completed: true,
+          watched_seconds: 0,
+          last_watched_at: new Date().toISOString(),
+        }, { onConflict: "user_id,lesson_id" });
+        if (error) throw error;
+        progressMarkedRef.current.add(lessonId);
+        toast.success("Marked as complete! 🎉");
+      }
+    } catch (err) {
+      console.warn("[progress] toggle failed", { lessonId, wasCompleted, err });
+      // Rollback
+      setCompletedLessonIds(prev => {
+        const next = new Set(prev);
+        if (wasCompleted) next.add(lessonId); else next.delete(lessonId);
+        setChapters(chs => recomputeChapterCounts(next, lessonsRef.current, chs));
+        return next;
+      });
+      toast.error(wasCompleted ? "Failed to update" : "Failed to mark complete");
+    }
+  }, [user, courseId]);
+
+  // Lesson-object overload — preserved for the few legacy callers that still
+  // pass a full Lesson (LessonView resume callback, etc.).
+  const handleToggleComplete = useCallback((lesson: Lesson) => {
+    void handleToggleCompleteById(lesson.id);
+  }, [handleToggleCompleteById]);
+
+  // Back-compat alias for any callers still using the old name
+  const handleManualComplete = handleToggleComplete;
+
+
+
+
+
+  // ── LOADING STATE ──────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Header onMenuClick={() => setSidebarOpen(true)} userName={profile?.fullName || "User"} />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex-1 p-5 space-y-3 max-w-2xl mx-auto w-full">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!course) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Header onMenuClick={() => setSidebarOpen(true)} userName={profile?.fullName || "User"} />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground">Course not found</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN VIEW ──────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Header onMenuClick={() => setSidebarOpen(true)} userName={profile?.fullName || "User"} />
+
+
+
+      {/* Mobile course sidebar backdrop */}
+      {courseSidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setCourseSidebarOpen(false)} />
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chapter Sidebar */}
+        <aside className={cn(
+          "fixed md:sticky top-0 md:top-auto z-40 h-full md:h-auto flex-shrink-0 bg-card border-r flex flex-col transition-all duration-300",
+          courseSidebarOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0",
+          sidebarCollapsed ? "md:w-0 md:overflow-hidden md:border-r-0" : "w-64 md:w-64"
+        )}>
+          <div className="flex items-center justify-between px-3 py-3 border-b shrink-0">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subjects</span>
+            <button onClick={() => setCourseSidebarOpen(false)} className="md:hidden p-1 rounded hover:bg-muted text-muted-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Search box */}
+          <div className="px-3 py-2 border-b shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search chapters..."
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-muted rounded-md border-0 outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
+              />
+              {sidebarSearch && (
+                <button
+                  onClick={() => setSidebarSearch("")}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-1">
+              {filteredSidebarChapters.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4 px-2">
+                  No chapters found
+                </p>
+              ) : filteredSidebarChapters.map((chapter) => {
+                const isActive = selectedChapterId === chapter.id || (!selectedChapterId && chapter.id === "__all__");
+                const pct = chapter.lessonCount > 0
+                  ? Math.round((chapter.completedLessons / chapter.lessonCount) * 100)
+                  : 0;
+                return (
+                  <button
+                    key={chapter.id}
+                    onClick={() => {
+                      setSelectedChapterId(chapter.id);
+                      setSelectedLesson(null);
+                      setSearchParams({});
+                      setLessonSearch("");
+                      setCourseSidebarOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex flex-col px-3 py-2 rounded-lg text-sm text-left transition-colors",
+                      isActive
+                        ? "bg-primary/10 text-primary font-medium border-l-2 border-primary pl-2.5"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {/* Top row */}
+                    <div className="flex items-center gap-2 w-full">
+                      <span className={cn(
+                        "text-xs font-bold px-1.5 py-0.5 rounded shrink-0",
+                        isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                      )}>
+                        {chapter.code}
+                      </span>
+                      <span className="flex-1 truncate leading-snug">{chapter.title}</span>
+                      {chapter.lessonCount > 0 && (
+                        <span className={cn(
+                          "text-xs px-1 py-0.5 rounded-full shrink-0",
+                          isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                        )}>
+                          {chapter.lessonCount}
+                        </span>
+                      )}
+                    </div>
+                    {/* Progress bar row */}
+                    {chapter.lessonCount > 0 && (
+                      <div className="mt-1.5 w-full space-y-0.5 pl-7">
+                        <div className="h-1 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all duration-500",
+                              pct === 100 ? "bg-green-500" : "bg-primary"
+                            )}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {chapter.completedLessons}/{chapter.lessonCount} done
+                        </p>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto min-w-0 bg-background">
+          {/* Breadcrumbs with sidebar toggles */}
+          <div className="sticky top-0 z-20 bg-background border-b">
+            <div className="flex items-center gap-2 px-4 py-2">
+              <div className="flex-1 min-w-0">
+                <Breadcrumbs
+                  segments={selectedLesson ? playerBreadcrumbs : selectedChapterId ? stackBreadcrumbs : chapterBreadcrumbs}
+                  onBack={() => {
+                    // Step back one in-page level; if already at root, leave the route.
+                    if (!closeOneLevel()) navigate("/my-courses");
+                  }}
+                  className=""
+                />
+              </div>
+              {/* Resume last watched */}
+              {!selectedLesson && lastWatchedLessonId && (() => {
+                const resumeLesson = lessons.find(l => l.id === lastWatchedLessonId);
+                if (!resumeLesson) return null;
+                return (
+                  <Button
+                    size="sm"
+                    className="shrink-0 gap-1.5 h-7 text-xs font-medium"
+                    onClick={() => {
+                      setSelectedLesson(resumeLesson);
+                      setSearchParams({ lesson: resumeLesson.id });
+                    }}
+                  >
+                    <Play className="h-3 w-3" />
+                    Resume
+                  </Button>
+                );
+              })()}
+              {/* Desktop sidebar collapse toggle */}
+              <button
+                onClick={() => setSidebarCollapsed(prev => !prev)}
+                className="hidden md:flex p-1.5 rounded-lg border bg-card text-muted-foreground hover:bg-muted transition-colors"
+                title={sidebarCollapsed ? "Show chapters" : "Hide chapters"}
+              >
+                {sidebarCollapsed
+                  ? <PanelLeftOpen className="h-4 w-4" />
+                  : <PanelLeftClose className="h-4 w-4" />
+                }
+              </button>
+              {/* Mobile sidebar toggle */}
+              <button
+                onClick={() => setCourseSidebarOpen(true)}
+                className="md:hidden p-1.5 rounded-lg border bg-card text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* ── STATE 1: Chapter grid ── */}
+          {!selectedChapterId && !selectedLesson && (
+            <>
+              <div className="flex gap-6 px-5 border-b border-border">
+                <button
+                  onClick={() => setChapterTab("chapters")}
+                  className={cn(
+                    "pb-3 text-base font-medium relative transition-colors",
+                    chapterTab === "chapters" ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  Subjects
+                  {chapterTab === "chapters" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-primary rounded-full" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setChapterTab("material")}
+                  className={cn(
+                    "pb-3 text-base font-medium relative transition-colors",
+                    chapterTab === "material" ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  Study Material
+                  {chapterTab === "material" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-primary rounded-full" />
+                  )}
+                </button>
+              </div>
+
+              <div className="p-5 space-y-3">
+                {chapterTab === "chapters" &&
+                  chapters.map((chapter) => (
+                    <ChapterCard
+                      key={chapter.id}
+                      code={chapter.code}
+                      title={chapter.title}
+                      lectureCount={chapter.lessonCount}
+                      completedLectures={chapter.completedLessons}
+                      thumbnailUrl={chapter.thumbnailUrl}
+                      onClick={() => { setSelectedChapterId(chapter.id); setLessonSearch(""); }}
+                    />
+                  ))
+                }
+                {chapterTab === "material" && (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>No study material available yet.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── STATE 2: Lesson list ── */}
+          {selectedChapterId && !selectedLesson && (() => {
+            // Compute chapter-level completion (all types, not tab-filtered)
+            const chapterLessons = selectedChapterId === "__all__"
+              ? lessons
+              : lessons.filter(l => l.chapterId === selectedChapterId);
+            const totalInChapter = chapterLessons.length;
+            const completedInChapter = chapterLessons.filter(l => completedLessonIds.has(l.id)).length;
+            const pct = totalInChapter > 0 ? Math.round((completedInChapter / totalInChapter) * 100) : 0;
+            const circumference = 2 * Math.PI * 14; // r=14 → ~88
+            const strokeDashoffset = circumference - (pct / 100) * circumference;
+            const isAllDone = totalInChapter > 0 && completedInChapter === totalInChapter;
+
+            return (
+              <>
+                {/* ── Completion banner ── */}
+                {totalInChapter > 0 && (
+                  <div className={cn(
+                    "mx-5 mt-3 px-4 py-3 rounded-xl border flex items-center gap-3 transition-all",
+                    isAllDone
+                      ? "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800/40"
+                      : "bg-primary/5 border-primary/10"
+                  )}>
+                    {/* Circular progress ring */}
+                    <div className="shrink-0">
+                      <svg width="36" height="36" viewBox="0 0 36 36" className="-rotate-90">
+                        <circle
+                          cx="18" cy="18" r="14"
+                          fill="none"
+                          strokeWidth="3"
+                          className="stroke-muted"
+                        />
+                        <circle
+                          cx="18" cy="18" r="14"
+                          fill="none"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={strokeDashoffset}
+                          className={isAllDone ? "stroke-green-500" : "stroke-primary"}
+                          style={{ transition: "stroke-dashoffset 0.4s ease" }}
+                        />
+                        <text
+                          x="18" y="18"
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          className="rotate-90"
+                          style={{ transform: "rotate(90deg) translate(0px, -36px)", fontSize: "8px", fontWeight: 700, fill: "currentColor" }}
+                        />
+                      </svg>
+                      {/* Percentage label in center */}
+                      <div className="relative -mt-[34px] flex items-center justify-center h-[36px]">
+                        <span className={cn(
+                          "text-[10px] font-bold tabular-nums",
+                          isAllDone ? "text-green-600 dark:text-green-400" : "text-primary"
+                        )}>
+                          {pct}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Text */}
+                    <div className="flex-1 min-w-0">
+                      {isAllDone ? (
+                        <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                          Chapter complete! 🎉
+                        </p>
+                      ) : (
+                        <p className="text-sm font-medium text-foreground">
+                          {completedInChapter} of {totalInChapter} lessons
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {isAllDone ? "All lessons completed" : `${totalInChapter - completedInChapter} remaining`}
+                      </p>
+                    </div>
+
+                    {/* Trophy / checkmark badge */}
+                    {isAllDone ? (
+                      <Trophy className="h-5 w-5 text-green-500 shrink-0" />
+                    ) : (
+                      <div className="shrink-0 text-right">
+                        <span className="text-xs text-muted-foreground tabular-nums font-medium">
+                          {completedInChapter}/{totalInChapter}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub-chapters (folder drill-down) — primary view when they exist */}
+                {hasSubChapters && (
+                  <div className="p-5 space-y-3">
+                    {subChaptersOfSelected.map((subCh) => (
+                      <ChapterCard
+                        key={subCh.id}
+                        code={subCh.code}
+                        title={subCh.title}
+                        lectureCount={subCh.lessonCount}
+                        completedLectures={subCh.completedLessons}
+                        thumbnailUrl={subCh.thumbnailUrl}
+                        onClick={() => {
+                          setParentChapterStack(prev => [...prev, selectedChapterId!]);
+                          setSelectedChapterId(subCh.id);
+                          setLessonSearch("");
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Tab bar + view toggle + search + lessons — only when NO sub-chapters */}
+                {!hasSubChapters && (
+                  <>
+                    <div className="flex items-center gap-2 px-4 py-2 min-w-0">
+                      <div className="flex gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0 -mx-1 px-1">
+                        {tabs.map((tab) => {
+                          const count = tabCounts[tab.id];
+                          const isActive = activeTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              onClick={() => setActiveTab(tab.id)}
+                              className={cn(
+                                "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap",
+                                isActive
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                              )}
+                            >
+                              {tab.label}
+                              <span className={cn(
+                                "shrink-0 text-[10px] px-1.5 py-0 rounded-full min-w-[18px] text-center leading-tight",
+                                isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                              )}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center gap-0.5 shrink-0 bg-muted/50 rounded-lg p-0.5">
+                        <button
+                          onClick={() => handleViewModeChange("card")}
+                          title="Card view"
+                          className={cn(
+                            "p-1.5 rounded-md transition-all",
+                            viewMode === "card"
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          )}
+                        >
+                          <LayoutGrid className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleViewModeChange("list")}
+                          title="List view"
+                          className={cn(
+                            "p-1.5 rounded-md transition-all",
+                            viewMode === "list"
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          )}
+                        >
+                          <LayoutList className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="px-5 pb-1 pt-2">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search lessons…"
+                          value={lessonSearch}
+                          onChange={(e) => setLessonSearch(e.target.value)}
+                          className="w-full pl-9 pr-8 py-2 text-sm bg-muted rounded-xl border-0 outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
+                        />
+                        {lessonSearch && (
+                          <button
+                            onClick={() => setLessonSearch("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className={cn("p-5", viewMode === "list" ? "space-y-2" : "space-y-4")}>
+                      {filteredLessons.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                          <BookOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+                          <p className="text-muted-foreground font-medium">
+                            {lessonSearch ? `No lessons match "${lessonSearch}"` : "No content found"}
+                          </p>
+                          <p className="text-sm text-muted-foreground/70 mt-1">
+                            {lessonSearch ? "Try a different search term." : "Try switching tabs or check back later."}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className={viewMode === "list" ? "space-y-1.5" : "space-y-4"}>
+                          {filteredLessons.map((lesson) => (
+                            <LectureRow
+                              key={lesson.id}
+                              id={lesson.id}
+                              title={lesson.title}
+                              lectureType={(lesson.lectureType || "VIDEO") as "VIDEO" | "PDF" | "DPP" | "NOTES" | "TEST"}
+                              position={lesson.position ?? undefined}
+                              duration={lesson.duration}
+                              createdAt={lesson.createdAt}
+                              youtubeId={lesson.youtubeId}
+                              thumbnailUrl={lesson.thumbnailUrl}
+                              isLocked={!!lesson.isLocked && !hasPurchased && !isAdminOrTeacher}
+                              isCompleted={completedLessonIds.has(lesson.id)}
+                              attachmentCount={attachmentCounts[lesson.id] || 0}
+                              classPdfUrl={lesson.classPdfUrl}
+                              videoUrl={lesson.videoUrl}
+                              compact={viewMode === "list"}
+                              onSelect={handleRowSelect}
+                              onNotes={handleRowNotes}
+                              onDownload={handleRowDownload}
+                              onMarkComplete={handleToggleCompleteById}
+                            />
+
+
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
+
+
+
+        </main>
+      </div>
+
+      <LessonAttachmentsSheet
+        open={!!notesSheetLesson}
+        onOpenChange={(o) => { if (!o) setNotesSheetLesson(null); }}
+        lessonId={notesSheetLesson?.id}
+        lessonTitle={notesSheetLesson?.title}
+        courseId={courseId}
+      />
+    </div>
+  );
+};
+
+export default MyCourseDetail;

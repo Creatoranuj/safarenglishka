@@ -1,0 +1,21 @@
+# Maestro smoke flow — runs on Android emulator in CI.
+# Install Maestro: curl -fsSL https://get.maestro.mobile.dev | bash
+# Run locally:    maestro test maestro/smoke.yaml
+appId: com.naveenbharat.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Naveen Bharat"
+- tapOn: "Login"
+- inputText: "naveenbharatprism@gmail.com"
+- tapOn:
+    id: "password"
+- inputText: "Ceoanuj26"
+- tapOn: "Sign in"
+- assertVisible:
+    text: "Dashboard"
+    timeout: 8000
+# Hardware back from dashboard → exit hint
+- pressKey: Back
+- assertVisible: "Press back again to exit"
+- pressKey: Back

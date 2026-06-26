@@ -1,0 +1,111 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.safarenglish.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.safarenglish.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        def ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")
+        versionCode ciRunNumber ? ciRunNumber.toInteger() : 1
+        // versionName MUST be numeric (e.g. "1.0.0") because ForceUpdateGate
+        // compares it against app_config.min_android_version segment-by-segment.
+        // Previously this used GITHUB_REF_NAME which is "main" on workflow_dispatch
+        // → parsed to [0] → triggered the "Update Required" popup on every build.
+        // Prefer APP_VERSION_NAME injected by the workflow; fall back to "1.0.0".
+        def rawVersion = System.getenv("APP_VERSION_NAME") ?: "1.0.0"
+        // Strip any non-numeric prefix/suffix (e.g. "v1.0-20260615-1234" → "1.0")
+        def numericVersion = (rawVersion =~ /\d+(\.\d+)*/) ? (rawVersion =~ /\d+(\.\d+)*/)[0][0] : "1.0.0"
+        versionName numericVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+        // Ship only ARM native libs — x86/x86_64 cuts ~12-18 MB and is unused
+        // on real student devices.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+    signingConfigs {
+        release {
+            def releaseStoreFile = System.getenv("RELEASE_STORE_FILE")
+            def releaseStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
+            def releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            def releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            // Debug APK is distributed to students. minifyEnabled is ON so
+            // R8 obfuscates source identifiers (no readable class names in
+            // the shipped APK), while shrinkResources stays OFF — the prior
+            // "app does not open" crash was specifically from shrinkResources
+            // removing reflectively-loaded Capacitor plugin classes. minify
+            // with the proguard-rules keep list is safe.
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // PERF — debug builds don't need PNG crunching or pseudo-locale
+            // generation. Skips two AGP tasks (~5-10s on cold debug builds).
+            crunchPngs false
+            pseudoLocalesEnabled false
+            // Skip the dependency-info block — pure metadata, useless for debug.
+            dependenciesInfo {
+                includeInApk = false
+                includeInBundle = false
+            }
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    bundle {
+        language { enableSplit = true }
+        density  { enableSplit = true }
+        abi      { enableSplit = true }
+    }
+}
+
+// NOTE: flatDir is required so capacitor-cordova-android-plugins can resolve
+// its bundled .jar / .aar libs. Gradle prints "Using flatDir should be avoided"
+// — this warning is expected and SAFE to ignore. Removing this block breaks
+// Cordova plugin compatibility. Do not "fix" it. (Re-verified 2026-05-22.)
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
