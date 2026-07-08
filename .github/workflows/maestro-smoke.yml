@@ -1,0 +1,120 @@
+# Maestro smoke tests on an Android emulator.
+# Closes the HIGH "no native-path tests" audit gap (skill 10: capacitor-testing).
+#
+# Triggers:
+#  - Manual dispatch (fast feedback while iterating on flows)
+#  - Pull requests that touch native/native-adjacent code, the flows themselves,
+#    or this workflow file. Full-repo runs would burn ~15 min per PR for zero
+#    signal on pure web-only diffs.
+#  - Nightly cron so regressions in main are caught even if no PR touches
+#    native code that day.
+#
+# Auth: uses the same test account that maestro/smoke.yaml logs in with.
+# Rotate via the MAESTRO_EMAIL / MAESTRO_PASSWORD repo secrets — do NOT
+# hardcode credentials here.
+
+name: Maestro Smoke (Android)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC nightly
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'capacitor-plugin-nb-pdf/**'
+      - 'maestro/**'
+      - 'src/config/backNavigation.ts'
+      - 'src/lib/offline/**'
+      - 'src/hooks/useAndroidBackButton*'
+      - '.github/workflows/maestro-smoke.yml'
+
+concurrency:
+  group: maestro-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  maestro:
+    name: Maestro flows on Android 33
+    # macOS runner: KVM-enabled Linux runners aren't public; macos-13 gives us
+    # hardware acceleration for the AVD via HAXM.
+    runs-on: macos-13
+    timeout-minutes: 45
+
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v5
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 🧰 Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: 📦 Install web deps
+        run: npm ci --no-audit --no-fund
+
+      - name: 🏗️ Build web bundle
+        env:
+          # Non-secret: preview build, points at prod Supabase (RLS enforced).
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+        run: npm run build
+
+      - name: 🔄 Capacitor sync
+        run: npx cap sync android
+
+      - name: 🍺 Install Maestro CLI
+        run: |
+          curl -fsSL https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: 📲 Assemble debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      # Boots an Android 33 emulator with a Play image so the WebView is
+      # up-to-date. Retries once because AVD boot flakes on macOS runners.
+      - name: 🤖 Run Maestro smoke on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # maestro/smoke.yaml reads ${MAESTRO_EMAIL}/${MAESTRO_PASSWORD}. The
+          # env var names MUST match those placeholders (not TEST_USER_*), and
+          # the secret names match playwright.yml's MAESTRO_EMAIL/MAESTRO_PASSWORD.
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: |
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            # Run flows in dependency order: smoke (login) primes state that
+            # offline-queue.yaml reuses. back-button-cold-start clears state
+            # itself, so order between it and pdf-back doesn't matter.
+            maestro test maestro/smoke.yaml
+            maestro test maestro/back-button-cold-start.yaml
+            maestro test maestro/pdf-back.yaml
+            maestro test maestro/offline-queue.yaml
+
+      - name: 📤 Upload Maestro artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: maestro-debug-${{ github.run_id }}
+          path: |
+            ~/.maestro/tests/**
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+          retention-days: 1

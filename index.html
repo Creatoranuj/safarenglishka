@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
+    <!-- Content Security Policy. Rationale & rotation rules: docs/briefs/08-security.md
+         - 'unsafe-inline' (script): required by inline boot script + Razorpay checkout.
+         - 'unsafe-eval' (script): required by pdf.js worker.
+         - 'unsafe-inline' (style): required by Tailwind runtime + shadcn.
+         - clickjacking: enforced via `X-Frame-Options: DENY` + `Content-Security-Policy:
+           frame-ancestors 'none'` HTTP headers set in `server/index.js`. `frame-ancestors`
+           in a <meta> tag is ignored by browsers and would only produce a console warning.
+         - `ws:` in connect-src is needed for Vite HMR in dev. In prod the app is served
+           over HTTPS so any ws:// is upgraded/blocked as mixed content anyway.
+         - upgrade-insecure-requests: any stray http:// is auto-upgraded to https://. -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self' https: data: blob:;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://*.razorpay.com https://cdn.jsdelivr.net https://mozilla.github.io https://www.youtube.com https://www.youtube-nocookie.com https://s.ytimg.com https://www.gstatic.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' data: https://fonts.gstatic.com;
+      img-src 'self' data: blob: https:;
+      media-src 'self' blob: https: https://*.b-cdn.net;
+      connect-src 'self' https: wss: ws: https://*.supabase.co wss://*.supabase.co https://*.b-cdn.net https://api.razorpay.com https://lumberjack.razorpay.com https://archive.org;
+      frame-src 'self' https: data: blob:;
+      worker-src 'self' blob:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self' https://*.razorpay.com;
+      upgrade-insecure-requests;
+    " />
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="preload" as="image" href="/brand/nb-mark.webp" type="image/webp" fetchpriority="high" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Safar English" />
+    <meta name="theme-color" content="#284b85" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" media="print" onload="this.media='all'" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
+    <link rel="preconnect" href="https://supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://supabase.co" />
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+    <link rel="dns-prefetch" href="https://mozilla.github.io" />
+    <link rel="dns-prefetch" href="https://archive.org" />
+    <link rel="dns-prefetch" href="https://drive.google.com" />
+    <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
+    <link rel="dns-prefetch" href="https://i.ytimg.com" />
+    <title>Safar English — Learn English the Smart Way</title>
+    <meta name="description" content="Safar English — Learn English the smart way. Live classes, lessons, and doubt-solving on your phone." />
+    <meta name="author" content="Safar English" />
+
+    <meta property="og:title" content="Safar English — Learn English the Smart Way" />
+    <meta property="og:description" content="Live classes, lessons, and doubt-solving on your phone." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Safar English" />
+    <meta property="og:url" content="/" />
+    <meta property="og:image" content="/branding/logo_og_image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Safar English — Learn English the Smart Way" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Safar English — Learn English the Smart Way" />
+    <meta name="twitter:description" content="Live classes, lessons, and doubt-solving on your phone." />
+    <meta name="twitter:image" content="/branding/logo_og_image.png" />
+    <meta name="twitter:image:alt" content="Safar English — Learn English the Smart Way" />
+
+    <style>
+      /* Warm paper background matches app theme AND Capacitor splash so the
+         native splash → boot screen → React paint sequence shows zero
+         white-flash. Dark-mode users get an instant dark surface instead. */
+      html,body{margin:0;padding:0;background:#F7F4EE;color:#0b1220;font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+      #nb-boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#F7F4EE;z-index:9999;transition:opacity .25s ease;pointer-events:none;will-change:opacity}
+      #nb-boot img{width:72px;height:72px;border-radius:18px;animation:nb-pulse 1.2s ease-in-out infinite}
+      #nb-boot p{font-size:13px;color:#475569;margin:0;letter-spacing:.02em}
+      @keyframes nb-pulse{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.07);opacity:1}}
+      /* Note: #nb-boot stays cream (#F7F4EE) on dark devices too — this matches
+         the native Android/iOS splash drawable so users see ZERO theme flash
+         during the splash → React paint handoff. The app's own pages handle
+         dark-mode theming after React mounts. */
+      @media (prefers-color-scheme: dark){
+        html,body{background:#0b1220;color:#e2e8f0}
+        #nb-boot p{color:#475569}
+      }
+    </style>
+
+  </head>
+
+  <body>
+    <div id="nb-boot"><img src="/icons/icon-192x192.png" alt="Safar English" /><p>Loading…</p></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Robust boot-screen removal: fires on FIRST React paint via MutationObserver,
+      // not waiting for window.load (which can hang on slow fonts/3p scripts).
+      // Multiple removal paths + hard 3s timeout = boot can NEVER block scroll.
+      (function(){
+        var removed = false;
+        function killBoot(){
+          if (removed) return; removed = true;
+          var b = document.getElementById('nb-boot');
+          if (!b) return;
+          b.style.opacity = '0';
+          setTimeout(function(){ if (b && b.parentNode) b.parentNode.removeChild(b); }, 320);
+        }
+        // 1) React paint observer — fires the millisecond <App/> renders.
+        var root = document.getElementById('root');
+        if (root && 'MutationObserver' in window) {
+          var mo = new MutationObserver(function(){
+            if (root.childNodes.length > 0) { mo.disconnect(); killBoot(); }
+          });
+          mo.observe(root, { childList: true });
+        }
+        // 2) Window load fallback.
+        window.addEventListener('load', function(){ setTimeout(killBoot, 50); });
+        // 3) Hard 3s safety — boot screen NEVER stays past 3s regardless of cause.
+        setTimeout(killBoot, 3000);
+        // 4) Exposed for SplashHider too.
+        window.__nbKillBoot = killBoot;
+
+        // Defer service-worker cleanup until the browser is idle so it can't
+        // delay first paint. Wiping stale SWs/caches still happens — just not
+        // on the critical path.
+        var idle = window.requestIdleCallback || function(cb){ return setTimeout(cb, 1200); };
+        idle(function(){
+          // Only wipe stale SW/caches on NATIVE (Capacitor) builds. On web,
+          // a future PWA SW would be silently nuked on every page load.
+          var isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+          if (!isNative) return;
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations()
+              .then(function(rs){ rs.forEach(function(r){ r.unregister(); }); })
+              .catch(function(){});
+          }
+          if ('caches' in window) {
+            caches.keys()
+              .then(function(keys){ keys.forEach(function(k){ caches.delete(k); }); })
+              .catch(function(){});
+          }
+        });
+      })();
+    </script>
+
+  </body>
+</html>

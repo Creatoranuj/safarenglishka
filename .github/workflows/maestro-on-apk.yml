@@ -1,0 +1,155 @@
+name: Maestro on APK (post-build device matrix)
+
+# P3 → done. Chains after Naveen Bharat build. Downloads the signed APK
+# artifact from the parent run, installs it on an Android emulator, and runs
+# the maestro flow suite on API 26 / 30 / 34. Fails on any red flow; uploads
+# logcat + video artifact on failure for post-mortem.
+
+on:
+  workflow_run:
+    workflows: ["Naveen Bharat"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Parent build-apk run ID to pull APK from (optional)'
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  maestro:
+    name: Maestro (API ${{ matrix.api-level }})
+    # Only chain when the parent build succeeded. Manual dispatch always runs.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [26, 30, 34]
+
+    steps:
+      - name: ⬇️ Checkout repo (for maestro/ flows)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: 📥 Download APK artifact from parent build
+        uses: actions/download-artifact@v8
+        with:
+          # Parent workflow uploads under naveen-bharat-apk-<version> —
+          # download-artifact v5 with `pattern` grabs whatever exists.
+          pattern: naveen-bharat-apk-*
+          path: apk-in/
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔎 Locate APK
+        id: locate
+        run: |
+          APK=$(find apk-in -name "*.apk" -type f | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found in downloaded artifacts."
+            find apk-in -type f
+            exit 1
+          fi
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "✅ Using $APK"
+
+      - name: ☕ Setup JDK 17 (Android emulator dep)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 🚀 Install Maestro CLI
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: 💾 AVD cache
+        uses: actions/cache@v5
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}-v1
+
+      - name: 📱 Create AVD & generate snapshot (cache miss only)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          profile: pixel_4
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: echo "AVD ready"
+
+      - name: 🧪 Boot emulator, install APK, run Maestro flows
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # maestro/smoke.yaml substitutes ${MAESTRO_EMAIL}/${MAESTRO_PASSWORD}
+          # from the process environment. Without these the login step receives
+          # empty strings and every matrix leg (API 26/30/34) fails at the
+          # "Sign in" → "Dashboard" assertion. Secret names match playwright.yml.
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          profile: pixel_4
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # NOTE: android-emulator-runner executes this script with /usr/bin/sh
+          # (dash on Ubuntu runners), which does NOT support `set -o pipefail`.
+          # Using it aborts the step at line 1 with "Illegal option -o pipefail"
+          # (exit code 2) before the emulator even boots. There are no pipelines
+          # in this script, so plain `set -e` is sufficient and dash-compatible.
+          script: |
+            set -e
+            adb wait-for-device
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+
+            echo "→ Installing ${{ steps.locate.outputs.apk }}"
+            adb install -r -t "${{ steps.locate.outputs.apk }}"
+
+            # Start logcat capture in background for failure artifact.
+            mkdir -p maestro-out
+            adb logcat -c || true
+            adb logcat > "maestro-out/logcat-api${{ matrix.api-level }}.txt" &
+            LOGCAT_PID=$!
+
+            FAILED=0
+            for flow in maestro/smoke.yaml maestro/pdf-back.yaml maestro/back-button-cold-start.yaml maestro/offline-queue.yaml; do
+              [ -f "$flow" ] || { echo "::warning::$flow missing — skipping"; continue; }
+              echo "::group::maestro test $flow"
+              if ! maestro test --format junit --output "maestro-out/$(basename "$flow" .yaml)-api${{ matrix.api-level }}.xml" "$flow"; then
+                echo "::error::Flow $flow FAILED on API ${{ matrix.api-level }}"
+                FAILED=1
+              fi
+              echo "::endgroup::"
+            done
+
+            kill "$LOGCAT_PID" 2>/dev/null || true
+            exit "$FAILED"
+
+      - name: 📤 Upload logcat + maestro output on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: maestro-failure-api${{ matrix.api-level }}
+          path: maestro-out/
+          retention-days: 1
+          if-no-files-found: ignore
