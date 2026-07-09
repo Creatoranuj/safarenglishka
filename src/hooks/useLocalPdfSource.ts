@@ -1,0 +1,286 @@
+import { useEffect, useState } from "react";
+import { addBreadcrumb, captureException, redactUrl } from "../lib/sentry";
+import { isResolvableStorageViewerUrl, resolveStorageBytes } from "@/lib/native/naveenStoragePdf";
+import { fileDB as personalFileDB } from "../lib/personalLibraryDB";
+import { downloadFileDB, getDownload } from "../lib/indexedDB";
+import { getDownloadUrl } from "../utils/fileUtils";
+import { fetchPdfViaNativeHttp } from "../lib/nativePdfHttp";
+import { loadCore } from "../lib/native/core";
+import { loadFilesystem } from "../lib/native/filesystem";
+
+
+/**
+ * Normalises any PDF URL into something react-pdf / pdf.js can load reliably.
+ *
+ * - Remote http(s) URLs are passed through untouched (pdf.js streams them with
+ *   range requests — see FastPdfReader).
+ * - Local URLs (capacitor://, file://, ionic://, http://localhost/_capacitor_file_…)
+ *   cannot be range-requested by the pdf.js worker, so we read the bytes once and
+ *   expose a same-origin `blob:` URL instead. This is what makes autoscroll +
+ *   canvas rendering work for offline Library / Downloads / Attachment PDFs.
+ *
+ * Returns the resolved source URL plus loading/error state.
+ */
+export type LocalPdfState = {
+  src: string | null;
+  data: Uint8Array | null;
+  loading: boolean;
+  error: string | null;
+  /** true when the source had to be materialised into a blob (local file). */
+  isLocal: boolean;
+};
+
+const LOCAL_RE = /^(capacitor:|ionic:|file:|blob:|data:|web-indexeddb:|nb-personal-library:)/i;
+const isLocalHttp = (u: string) =>
+  /^https?:\/\/localhost\//i.test(u) || /_capacitor_file_/i.test(u);
+const webDownloadId = (u: string) => u.match(/^web-indexeddb:(\d+)$/i)?.[1] ?? null;
+const personalLibraryId = (u: string) => u.match(/^nb-personal-library:([^?#]+)$/i)?.[1] ?? null;
+const FETCH_TIMEOUT_MS = 25000;
+// Kept for API compatibility with the abort/timeout branches below; no longer
+// used to preload whole remote PDFs on native (pdf.js streams them directly).
+const NATIVE_REMOTE_FETCH_TIMEOUT_MS = 25000;
+
+async function fetchBlobWithTimeout(url: string, signal: AbortSignal): Promise<Blob> {
+  const nativeBlob = await fetchPdfViaNativeHttp(url, signal);
+  if (nativeBlob) return nativeBlob;
+
+  // First attempt — normal cached fetch.
+  let res = await fetch(url, { credentials: "omit", signal });
+  // Signed-URL expiry / transient gateway hiccup: one retry with cache bypass.
+  // 401/403/410 = expired signature; 408/425/429/5xx = transient. Skip 404
+  // (real missing object — retry won't help and just delays the error toast).
+  if (!res.ok && res.status !== 404 && /^(?:401|403|408|410|425|429|5\d\d)$/.test(String(res.status))) {
+    addBreadcrumb("pdf", "fetch:retry", { status: res.status, url: redactUrl(url, 80) });
+    const sep = url.includes("?") ? "&" : "?";
+    res = await fetch(`${url}${sep}_nbretry=${Date.now()}`, { credentials: "omit", signal, cache: "reload" });
+  }
+  if (!res.ok) throw new Error(`FileNotFound: HTTP ${res.status}`);
+  return res.blob();
+}
+
+/**
+ * Read a Capacitor-local file (capacitor://, file://, or the WebViewLocalServer
+ * https://localhost/_capacitor_file_/<path> form) DIRECTLY via the Filesystem
+ * plugin instead of round-tripping through fetch(). This avoids a class of
+ * release-APK bugs where WebViewLocalServer returns empty/HTML responses for
+ * large binary files, making offline PDFs fail to open.
+ *
+ * Returns null on web (or when the plugin isn't available) so the caller can
+ * fall back to the normal fetch path.
+ */
+async function readNativeFileAsBlob(url: string): Promise<Blob | null> {
+  try {
+    const { Capacitor } = await loadCore();
+    if (!Capacitor.isNativePlatform()) return null;
+    const { plugin: Filesystem } = await loadFilesystem();
+
+    // Extract an absolute file path from any of the supported local URL forms.
+    let absPath: string | null = null;
+    if (/^file:\/\//i.test(url)) {
+      absPath = decodeURIComponent(url.replace(/^file:\/\//i, ""));
+    } else if (/_capacitor_file_/i.test(url)) {
+      const m = url.match(/_capacitor_file_(.*)$/i);
+      if (m) absPath = decodeURIComponent(m[1]);
+    } else if (/^capacitor:\/\//i.test(url) || /^ionic:\/\//i.test(url)) {
+      // capacitor://localhost/_capacitor_file_/<abs>
+      const m = url.match(/_capacitor_file_(.*)$/i);
+      if (m) absPath = decodeURIComponent(m[1]);
+    }
+    if (!absPath) return null;
+
+    // Filesystem.readFile with an absolute path requires NO `directory` option.
+    const res = await Filesystem.readFile({ path: absPath });
+    const data = res.data;
+    if (typeof data === "string") {
+      // base64 → bytes → blob
+      const bin = atob(data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: "application/pdf" });
+    }
+    // Some Capacitor versions return a Blob directly.
+    if (data instanceof Blob) return data;
+    return null;
+  } catch (err) {
+    addBreadcrumb("pdf", "readNativeFile:fail", { msg: (err as Error)?.message });
+    return null;
+  }
+}
+
+export function isLocalPdfUrl(url: string): boolean {
+  return LOCAL_RE.test(url) || isLocalHttp(url);
+}
+
+export function useLocalPdfSource(url: string): LocalPdfState {
+  const initiallyMaterialized = isLocalPdfUrl(url) || isResolvableStorageViewerUrl(url);
+  const [state, setState] = useState<LocalPdfState>({
+    src: initiallyMaterialized ? null : url,
+    data: null,
+    loading: initiallyMaterialized,
+    error: null,
+    isLocal: initiallyMaterialized,
+  });
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+    let timedOut = false;
+    let timeout: number | null = null;
+
+    if (!url) {
+      setState({ src: null, data: null, loading: false, error: "No file", isLocal: false });
+      return;
+    }
+
+    const isLocal = isLocalPdfUrl(url);
+    const isResolvableRemote = !isLocal && isResolvableStorageViewerUrl(url);
+    // On Capacitor native (`https://localhost` WebView origin) pdf.js worker
+    // Range requests against cross-origin hosts are silently CORS-blocked for
+    // any host that doesn't echo `Access-Control-Allow-Headers: Range` — the
+    // worker stalls with no `onLoadError`, leaving users on a blank reader.
+    // Detect native + remote http(s) here and pre-fetch bytes on the main
+    // thread (a normal page fetch, not a Range worker fetch). Falls back to
+    // passthrough on failure so the existing iframe-viewer chain still runs.
+    const isRemoteHttp =
+      !isLocal && /^https?:\/\//i.test(url) && !/^https?:\/\/localhost\b/i.test(url);
+    const isDrivePdfProxy = /\/pdf-proxy\?kind=drive|[?&]kind=drive/i.test(url);
+    let isNativePlatform = false;
+    try {
+      isNativePlatform = !!(
+        globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }
+      ).Capacitor?.isNativePlatform?.();
+    } catch { /* web */ }
+    // PERF: Previously on Android APK we preloaded EVERY remote http(s) PDF
+    // through CapacitorHttp before pdf.js could render page 1 — a 40 MB Notes
+    // PDF over 4G took ~90s of blank spinner. pdf.js Range streaming works
+    // fine through pdf-proxy (Drive path already relies on it), so we now let
+    // ALL remote http URLs stream directly on native too. Only local files
+    // and resolvable Supabase-storage viewer URLs still need materialisation.
+    const shouldMaterialize = isLocal || isResolvableRemote;
+
+    if (!shouldMaterialize) {
+      setState({ src: url, data: null, loading: false, error: null, isLocal: false });
+      return;
+    }
+
+    timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, isNativePlatform && isRemoteHttp ? NATIVE_REMOTE_FETCH_TIMEOUT_MS : FETCH_TIMEOUT_MS);
+
+    // blob:/data: URLs from the personal library are same-origin object URLs.
+    // Materialise them to bytes before handing them to pdf.js; mobile Firefox /
+    // Android WebView can fail when the worker tries to re-fetch blob URLs by
+    // URL, which surfaces as "Could not load this PDF" even though the Blob is valid.
+
+    setState({ src: null, data: null, loading: true, error: null, isLocal: true });
+    addBreadcrumb("pdf", "materialize-local", { url: redactUrl(url, 80) });
+
+    (async () => {
+      try {
+        const dlId = webDownloadId(url);
+        const plId = personalLibraryId(url);
+        let blob: Blob | undefined;
+        if (dlId) {
+          blob = (await downloadFileDB.get(Number(dlId)))?.blob;
+          if (!blob) {
+            // Bytes missing locally — only attempt remote fetch when online.
+            if (typeof navigator !== "undefined" && navigator.onLine === false) {
+              throw new Error("This file isn't available offline. Re-download it while you're online.");
+            }
+            const rec = await getDownload(Number(dlId));
+            if (rec?.url) {
+              blob = await fetchBlobWithTimeout(rec.url, controller.signal);
+            }
+          }
+        } else if (plId) {
+          blob = (await personalFileDB.get(plId))?.blob;
+          if (!blob) {
+            throw new Error("This library file is no longer available on this device.");
+          }
+        } else if (isResolvableRemote) {
+          blob = await resolveStorageBytes(url, controller.signal);
+        } else {
+          // For native local URLs, prefer reading bytes directly via the
+          // Filesystem plugin (skips the WebViewLocalServer round-trip that
+          // breaks in release APKs for large binary PDFs).
+          if (isLocal) {
+            const direct = await readNativeFileAsBlob(url);
+            if (direct) blob = direct;
+          }
+          if (!blob) {
+            blob = await fetchBlobWithTimeout(url, controller.signal);
+          }
+        }
+        if (!blob) throw new Error("FileNotFound: local PDF bytes missing");
+        if (dlId) {
+          try { await downloadFileDB.put(Number(dlId), blob); } catch { /* best-effort repair */ }
+        }
+        if (!alive) return;
+        const data = new Uint8Array(await blob.arrayBuffer());
+        setState({ src: null, data, loading: false, error: null, isLocal: true });
+        addBreadcrumb("pdf", "materialize-local:ok", { size: blob.size });
+      } catch (err) {
+        if (!alive) return;
+        const errName = (err as { name?: string })?.name || "";
+        const rawMsg = (err as Error)?.message || "";
+        // AbortError fires whenever the user navigates away (cleanup aborts
+        // the controller) OR the 18s timeout trips. Neither is a real error
+        // — surfacing it as "Failed to load" + a captureException spammed
+        // Sentry and showed a misleading red toast on chip-section reopen.
+        if (errName === "AbortError" || /aborted|AbortError/i.test(rawMsg)) {
+          addBreadcrumb("pdf", "materialize-local:aborted", { url: redactUrl(url, 80) });
+          const isIndexedLocal = !!webDownloadId(url) || !!personalLibraryId(url);
+          const nativeRemoteFallback = isNativePlatform && isRemoteHttp;
+          // Timeout while materialising a large remote/native PDF is not a
+          // navigation cleanup. Previously this returned without updating
+          // state, leaving Notes/DPP/Library stuck on an infinite spinner in
+          // the APK. Fall back to the stream/proxy reader path instead.
+          if (timedOut && (isResolvableRemote || nativeRemoteFallback) && !isIndexedLocal) {
+            setState({ src: url, data: null, loading: false, error: null, isLocal: false });
+          } else if (timedOut && isIndexedLocal) {
+            setState({
+              src: null,
+              data: null,
+              loading: false,
+              error: "This file took too long to open. Re-download it while you're online.",
+              isLocal: true,
+            });
+          }
+          return;
+        }
+        captureException(err, { where: "useLocalPdfSource", url: redactUrl(url, 120) });
+        const isIndexedLocal = !!webDownloadId(url) || !!personalLibraryId(url);
+        const isNetworkErr = /NetworkError|Failed to fetch|network/i.test(rawMsg);
+        // Soft fallback for resolvable remote/local browser URLs AND native
+        // remote http(s) URLs: pass through the original URL so pdf.js can
+        // attempt a direct stream. IndexedDB virtual URLs are not real
+        // fetchable URLs, so surface a clean error.
+        const nativeRemoteFallback = isNativePlatform && isRemoteHttp;
+        if ((isResolvableRemote || isLocal || nativeRemoteFallback) && !isIndexedLocal) {
+          setState({ src: url, data: null, loading: false, error: null, isLocal: false });
+        } else {
+          const friendly = isIndexedLocal && isNetworkErr
+            ? "This file isn't available offline. Re-download it while you're online."
+            : rawMsg || "FileNotFound";
+          setState({
+            src: null,
+            data: null,
+            loading: false,
+            error: friendly,
+            isLocal: true,
+          });
+        }
+      }
+
+    })();
+
+    return () => {
+      alive = false;
+      if (timeout) window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [url]);
+
+  return state;
+}
