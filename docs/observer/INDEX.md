@@ -1,0 +1,14 @@
+# Observer Reports Index
+
+- 2026-07-08 — [Full session recap + audit mind-map](./2026-07-08-full-recap.md) — security hardening (8/8) + soft-touch Wave A plan; Rating 4/5, 0 CRITICAL/HIGH.
+- 2026-07-08 — [Red-team sweep + landing rebrand](./2026-07-08-red-team-and-landing.md) — 7 scanners clean; Telegram + YouTube wired into CommunityStrip, Footer, and site_settings.
+- 2026-07-08 — [Undone checklist + long-run roadmap](./2026-07-08-undone-checklist.md) — carry-over backlog, 12/18 skills unused, 5-sprint recommendation.
+- 2026-07-08 — [Sprint 3 red-team 25-vector PoC](./2026-07-08-sprint3-red-team.md) — Rating 4/5, 1 MEDIUM (bucket MIME/size caps), 1 LOW (wildcard CORS); every other vector held.
+- 2026-07-08 — [Sprint 3.5 ship + frog-eye](./2026-07-08-sprint3.5-ship.md) — `_shared/cors.ts` on 3 payment/admin fns, 4 new LOW findings, reusable audit prompt.
+- 2026-07-08 — [Meta-verdict on 11-skill re-run prompt](./2026-07-08-verdict-audit-meta.md) — Rating 2/5, net NEGATIVE; recommend scoped single-surface runs instead.
+- 2026-07-10 — [Remaining work after 27-skill sweep](./2026-07-10-remaining-work.md) — Rating 4.3/5, 0 CRITICAL open; 2 LOW inline + 3 MEDIUM approval + 3 HIGH-churn root items.
+- [2026-07-11 session status](2026-07-11-session-status.md) — resolved-vs-remaining table + APK safe-area gaps
+- [2026-07-12 remaining work](2026-07-12-remaining-work.md) — post-PDF-drawer session: 12 failing tests, edge-fn "Call Failed" unreproduced, DocReaderShell APK-verify still pending; cancelled #56 refactor debunked.
+- [2026-07-13 loose ends](2026-07-13-loose-ends.md) — after Sentry-12 + PDF popup blink session: `LessonAttachmentsSheet` still `modal={true}` (same blink class), Playwright verify never ran, on-device Sentry snapshot pending; 11 skill tags from #95 dropped.
+- [2026-07-13 post-CI-rename](2026-07-13-post-ci-rename.md) — after crash-shield MED fixes + build-apk.yml rename to SafarEnglish: MED-1 not re-verified, MED-2 has no regression test, tag guard untested, 7 named skills dropped this session.
+- [2026-07-13 final gap sweep](2026-07-13-final-gap-sweep.md) — pre-v1.0.17 11-skill ship-check → 🟢 green

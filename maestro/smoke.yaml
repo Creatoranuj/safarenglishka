@@ -1,0 +1,23 @@
+# Maestro smoke flow — runs on Android emulator in CI.
+# Install Maestro: curl -fsSL https://get.maestro.mobile.dev | bash
+# Run locally:    maestro test maestro/smoke.yaml --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=...
+# In CI:          set MAESTRO_EMAIL / MAESTRO_PASSWORD as repo secrets and pass with --env.
+# NEVER hardcode credentials here — this file is committed to the repo.
+appId: com.safarenglishka.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Safar English"
+- tapOn: "Login"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "password"
+- inputText: ${MAESTRO_PASSWORD}
+- tapOn: "Sign in"
+- assertVisible:
+    text: "Dashboard"
+    timeout: 8000
+# Hardware back from dashboard → exit hint
+- pressKey: Back
+- assertVisible: "Press back again to exit"
+- pressKey: Back
