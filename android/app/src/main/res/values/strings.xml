@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Safar English</string>
-    <string name="title_activity_main">Safar English</string>
-    <string name="package_name">com.safarenglishka.app</string>
-    <string name="custom_url_scheme">com.safarenglishka.app</string>
-</resources>

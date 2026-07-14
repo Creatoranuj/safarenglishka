@@ -1,2 +1,0 @@
-
-DROP EXTENSION IF EXISTS pg_graphql CASCADE;

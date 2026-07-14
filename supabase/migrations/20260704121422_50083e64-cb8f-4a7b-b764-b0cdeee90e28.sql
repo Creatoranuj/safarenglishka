@@ -1,1 +1,0 @@
-ALTER TABLE public.enrollments DROP CONSTRAINT IF EXISTS unique_user_course;

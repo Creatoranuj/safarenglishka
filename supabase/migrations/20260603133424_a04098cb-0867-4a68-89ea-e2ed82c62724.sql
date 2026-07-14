@@ -1,1 +1,0 @@
-GRANT EXECUTE ON FUNCTION public.get_platform_stats() TO anon, authenticated;
