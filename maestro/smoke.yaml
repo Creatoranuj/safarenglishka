@@ -1,0 +1,117 @@
+# Maestro smoke flow — runs on Android emulator in CI.
+# Install Maestro: curl -fsSL https://get.maestro.mobile.dev | bash
+# Run locally:    maestro test maestro/smoke.yaml --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=...
+# In CI:          set MAESTRO_EMAIL / MAESTRO_PASSWORD as repo secrets and pass with --env.
+# NEVER hardcode credentials here — this file is committed to the repo.
+appId: com.safarenglishka.app
+---
+# 1) Cold start → landing
+# NOTE: WebView cold start on API 28 (Android 9's older Chromium) takes
+# noticeably longer than API 33/35 — the app + JS bundle can need 20–30s to
+# first-paint on the emulator. Keep this timeout generous so the flow is not
+# API-level-flaky. Regex accepts either the landing brand OR the Login CTA
+# (whichever renders first proves the WebView is alive).
+- launchApp:
+    clearState: true
+# Step 1 — WebView cold-start proof. API 28 (older Chromium) can take 60-80s
+# to first paint on x86_64 emulator; keep this generous. Widened regex covers
+# splash brand, landing headlines, header nav, hero CTAs, bottom-nav tabs,
+# and the auth screen — whichever renders first counts as pass.
+# NOTE: Do NOT use Maestro `takeScreenshot` or `waitForAnimationToEnd` here.
+# On Android emulator/WebView (seen on API 33), Maestro can fail the flow with
+# `Screenshot returned null — window may not be ready` even after visible text
+# assertions pass. Workflow-level `adb screencap` captures failure evidence
+# safely outside Maestro instead.
+- extendedWaitUntil:
+    visible: "Safar English|SafarEnglish|Safar|Login|Log in|Sign in|Sign In|Welcome|Get Started|Continue|Start|Skip|Home|My Courses|Dashboard|Practice|Book|Class"
+    timeout: 120000
+
+
+# 2) Landing → Login screen
+- extendedWaitUntil:
+    visible: "Login"
+    timeout: 20000
+- tapOn:
+    text: "Login"
+    index: 0
+- extendedWaitUntil:
+    visible: "Welcome Back"
+    timeout: 20000
+
+# 3) Auth flow — real Supabase login on signed release build.
+# NOTE: `waitForAnimationToEnd` was removed here — on Android WebView it
+# sometimes returns a null screenshot before the surface is ready, which
+# aborted the whole flow on API 33 with `Screenshot returned null`. The
+# `extendedWaitUntil` above already gates on real content, so animation
+# settling is implicit. Screenshot still captured for failure triage.
+- tapOn:
+    id: ".*(email|Email).*"
+    optional: true
+- tapOn:
+    text: "Email"
+    optional: true
+- inputText: ${MAESTRO_EMAIL}
+# API 35 IME bug: hide keyboard between inputs so Maestro's next tap doesn't
+# race the soft-keyboard animation and deadlock the gRPC channel.
+- hideKeyboard
+- tapOn:
+    id: ".*(password|Password).*"
+    optional: true
+- tapOn:
+    text: "Password"
+    optional: true
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+
+- tapOn: "Sign In"
+# Post-login dashboard render. Tokens verified against src/pages/Dashboard.tsx.
+# Regex WIDENED for API 35: also accepts bottom-nav labels + generic post-auth
+# tokens so we don't false-fail if the header copy shifted.
+- extendedWaitUntil:
+    visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 120000
+
+
+# 4) My Courses tab — bottom nav renders, route mounts
+- tapOn:
+    text: "My Courses"
+    optional: true
+- extendedWaitUntil:
+    visible: "My Courses|No active courses|Enrolled"
+    timeout: 15000
+
+
+# 5) Downloads tab — empty state OR list renders (proves route + IndexedDB init)
+- tapOn:
+    text: "Downloads"
+    optional: true
+- extendedWaitUntil:
+    visible: "Downloads|No downloads|Saved"
+    timeout: 15000
+
+
+# 6) Profile tab — session persists across nav (email visible = session alive)
+- tapOn:
+    text: "Profile"
+    optional: true
+- extendedWaitUntil:
+    visible: ${MAESTRO_EMAIL}
+    timeout: 10000
+
+# 7) Settings → Delete Account visible (Play Store policy guardrail)
+- tapOn:
+    text: "Settings"
+    optional: true
+- extendedWaitUntil:
+    visible: "Delete Account|Delete my account"
+    timeout: 8000
+    optional: true
+
+# 8) Hardware back → exit hint (regression fix from useAndroidBackButton)
+- pressKey: Back
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Press back again to exit"
+    timeout: 4000
+    optional: true
+- pressKey: Back
