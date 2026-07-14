@@ -1,0 +1,381 @@
+name: Signed APK Smoke
+
+# Runs Maestro smoke flow against the SIGNED release APK on tag pushes.
+# This catches ProGuard/R8 stripping regressions that debug builds miss.
+# Debug-APK Maestro run lives in maestro-android.yml (nightly/manual).
+#
+# Required GitHub secrets:
+#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD,
+#   MAESTRO_EMAIL, MAESTRO_PASSWORD,
+#   VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY
+# Optional (P2 auto-promote to Play internal track):
+#   PLAY_SERVICE_ACCOUNT_JSON — Google Play Console service account JSON.
+#   When present, a green matrix triggers an AAB build + upload to the Play
+#   internal testing track as a DRAFT release. When absent, the job soft-skips.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      promote_dry_run:
+        description: 'Also run promote-to-play job (requires PLAY_SERVICE_ACCOUNT_JSON). Soft-skips when secret is missing.'
+        type: boolean
+        default: false
+
+concurrency:
+  group: signed-apk-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+# Match maestro-android.yml + build-apk.yml — Capacitor 6+ needs Java 21.
+env:
+  JAVA_VERSION: '21'
+
+jobs:
+  smoke-signed-apk:
+    # Ubuntu + KVM: macOS runners no longer expose HVF reliably to
+    # android-emulator-runner (adb device-not-found loop for 15 min then
+    # cleanup). Ubuntu with /dev/kvm boots deterministically in ~2 min.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # P1 — Play device fleet coverage. API 28 = Android 9 (WebView diffs),
+        # 33 = Android 13 (baseline), 35 = Android 15 (predictive back, new
+        # scoped-storage). Signed APK must pass on all three before tag ships.
+        api-level: [28, 33, 35]
+    name: smoke (API ${{ matrix.api-level }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 📦 Install deps
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        run: bunx cap sync android
+
+      - name: 🔐 Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret missing — cannot build signed release APK"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          echo "✅ Keystore decoded ($(wc -c < android/app/release.keystore) bytes)"
+
+      - name: 🏗️ Build signed release APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Emulator runs x86_64; ship-release ABIs alone yield
+          # INSTALL_FAILED_NO_MATCHING_ABIS. Widen only for the smoke build.
+          ANDROID_ABI_FILTERS: "arm64-v8a,armeabi-v7a,x86_64"
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: 📥 Install Maestro
+        run: |
+          curl -fsSL https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> $GITHUB_PATH
+
+      - name: 🖥️ Enable KVM (Ubuntu runner)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 📝 Write smoke script to file
+        # Runner executes each line of `script:` as its own `sh -c` — shell
+        # vars don't persist. Workaround: stage the full script here so the
+        # emulator step can invoke it with a single command.
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        run: |
+          if [ -z "${MAESTRO_EMAIL:-}" ] || [ -z "${MAESTRO_PASSWORD:-}" ]; then
+            echo "::error::MAESTRO_EMAIL or MAESTRO_PASSWORD secret missing — cannot run signed APK smoke login"; exit 1
+          fi
+          cat > /tmp/smoke.sh <<'SMOKE_EOF'
+          #!/usr/bin/env bash
+          set -eo pipefail
+          export MAESTRO_CLI_NO_ANALYTICS=1
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found under android/app/build/outputs/apk/release"
+            ls -la android/app/build/outputs/apk/release || true
+            exit 1
+          fi
+          echo "Installing signed APK: $APK ($(wc -c < "$APK") bytes)"
+          adb install -r "$APK"
+          SMOKE_EXIT=0
+          mkdir -p maestro-debug
+          # --- Primary smoke: login + core nav (blocking) ---
+          maestro test \
+            --env MAESTRO_EMAIL="$MAESTRO_EMAIL" \
+            --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" \
+            --debug-output maestro-debug \
+            --flatten-debug-output \
+            --format junit \
+            --output signed-smoke.xml \
+            maestro/smoke.yaml || SMOKE_EXIT=$?
+          # --- Secondary flows (non-blocking; observability only) ---
+          # PDF back-button contract — top Sentry issue guardrail.
+          maestro test \
+            --env MAESTRO_EMAIL="$MAESTRO_EMAIL" \
+            --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" \
+            --debug-output maestro-debug \
+            --flatten-debug-output \
+            maestro/pdf-back.yaml || echo "::warning::pdf-back flow failed (non-blocking)"
+          # Cold-start back button regression.
+          maestro test \
+            --debug-output maestro-debug \
+            --flatten-debug-output \
+            maestro/back-button-cold-start.yaml || echo "::warning::back-button-cold-start flow failed (non-blocking)"
+          if [ "$SMOKE_EXIT" -ne 0 ]; then
+            echo "::group::Maestro debug artifacts"
+            find maestro-debug -maxdepth 2 -type f -print || true
+            for f in maestro-debug/*.log maestro-debug/*.json; do
+              [ -f "$f" ] || continue
+              echo "--- $f (tail) ---"
+              tail -n 120 "$f" || true
+            done
+            echo "::endgroup::"
+          fi
+          adb logcat -d > logcat.txt || true
+          # --- Perf gate: cold-boot time regression detector ---
+          BOOT_MS=$(grep -oE "Boot completed in [0-9]+ ms" logcat.txt | grep -oE "[0-9]+" | head -1 || echo "0")
+          echo "Cold boot: ${BOOT_MS} ms"
+          # P1 — Hard regression gate. Signed APK cold-boot has been ~50s on
+          # API 33 / x86_64. 120s is a conservative ceiling that still catches
+          # real regressions (WebView init hang, splash-hider stall, JS parse
+          # blowup) without flaking on the slower API 28 image.
+          if [ -n "$BOOT_MS" ] && [ "$BOOT_MS" -gt 0 ]; then
+            if [ "$BOOT_MS" -gt 120000 ]; then
+              echo "::error::Cold boot ${BOOT_MS}ms exceeds 120s hard budget — perf regression"
+              exit 1
+            elif [ "$BOOT_MS" -gt 75000 ]; then
+              echo "::warning::Cold boot ${BOOT_MS}ms exceeds 75s soft budget"
+            fi
+          fi
+          # --- Crash pre-filter for fast triage ---
+          grep -iE "AndroidRuntime|FATAL EXCEPTION|ANR in |E/Capacitor" logcat.txt > logcat-crashes.txt || true
+          if [ -s logcat-crashes.txt ]; then
+            echo "::warning::Crash/ANR signals detected in logcat — see logcat-crashes.txt artifact"
+            head -50 logcat-crashes.txt
+          fi
+          exit $SMOKE_EXIT
+
+          SMOKE_EOF
+          chmod +x /tmp/smoke.sh
+          echo "✅ smoke script staged ($(wc -l < /tmp/smoke.sh) lines)"
+
+      - name: 🤖 Boot emulator + install SIGNED APK + smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          force-avd-creation: false
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash /tmp/smoke.sh
+
+      - name: 📤 Upload logcat (always)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-smoke-logcat-api${{ matrix.api-level }}
+          path: |
+            logcat.txt
+            logcat-crashes.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+
+      - name: 🧹 Cleanup keystore
+        if: always()
+        run: rm -f android/app/release.keystore
+
+      - name: 📤 Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-apk-smoke-report-api${{ matrix.api-level }}
+          path: |
+            signed-smoke.xml
+            maestro-debug/**/*
+            android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 📤 Upload gradle build reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-build-reports-signed-api${{ matrix.api-level }}
+          path: |
+            android/**/build/reports/**/*
+            android/**/build/outputs/logs/**/*
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────
+  # P2 — Auto-promote signed AAB to Google Play internal testing track.
+  # Runs only when the entire matrix (API 28/33/35) passed green, and only
+  # for real tag pushes (not workflow_dispatch smoke runs). Soft-skips when
+  # PLAY_SERVICE_ACCOUNT_JSON is not configured so first-time contributors
+  # aren't blocked.
+  # ─────────────────────────────────────────────────────────────────────
+  promote-to-play:
+    name: Promote AAB → Play internal (draft)
+    needs: smoke-signed-apk
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.promote_dry_run == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 🔍 Check Play service-account secret
+        id: gate
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::warning::PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play upload. Add the secret in repo settings to enable auto-promote."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 📦 Install deps
+        if: steps.gate.outputs.skip != 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        if: steps.gate.outputs.skip != 'true'
+        run: bunx cap sync android
+
+      - name: 🔐 Decode signing keystore
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret missing"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+
+      - name: 🏗️ Build signed release AAB
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Play upload AAB uses production ABIs only (arm64-v8a, armeabi-v7a).
+          # Do NOT widen with x86_64 here — that was only for the emulator smoke.
+        run: |
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
+          echo "AAB: $AAB ($(wc -c < "$AAB") bytes)"
+
+      - name: 🚀 Upload AAB to Play internal (draft)
+        if: steps.gate.outputs.skip != 'true'
+        # Pinned to v1.1.2 SHA to prevent supply-chain risk from mutable tags.
+        uses: r0adkll/upload-google-play@935ef9c68bb393a8e6116b1575626a7f5be3a7fb
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.safarenglishka.app
+          releaseFiles: android/app/build/outputs/bundle/release/*.aab
+          track: internal
+          status: draft
+          # Draft = does NOT auto-notify testers. Reviewer must click
+          # "Review release" → "Start rollout" in Play Console. This keeps a
+          # human in the loop; flip to `status: completed` only when the team
+          # trusts the pipeline end-to-end.
+          whatsNewDirectory: distribution/whatsnew
+          mappingFile: android/app/build/outputs/mapping/release/mapping.txt
+
+      - name: 📤 Upload AAB artifact (always)
+        if: steps.gate.outputs.skip != 'true' && always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-aab-${{ github.ref_name }}
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: 🧹 Cleanup keystore
+        if: always()
+        run: rm -f android/app/release.keystore
