@@ -1,0 +1,42 @@
+name: Code Guards
+
+# Cheap grep-based ceilings that fail CI when NEW hardcoded colors or raw
+# console.* calls are added above the snapshot budget. Ratchet down by
+# lowering the BUDGET constant in each script after cleanup PRs land.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/check-design-tokens.mjs'
+      - 'scripts/check-console-usage.mjs'
+      - '.github/workflows/code-guards.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/check-design-tokens.mjs'
+      - 'scripts/check-console-usage.mjs'
+  workflow_dispatch:
+
+concurrency:
+  group: code-guards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Design-token ceiling
+        run: node scripts/check-design-tokens.mjs
+
+      - name: Console-usage ceiling
+        run: node scripts/check-console-usage.mjs
