@@ -25,12 +25,13 @@ import {
 } from "../components/ui/dialog";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
+import { selectionHaptic } from "@/lib/native/haptics";
 import {
   Upload, Users, CheckCircle, XCircle, Clock,
   Trash2, Plus, BookOpen, ExternalLink, ShieldAlert, Search,
   Download, Filter, RefreshCw, Eye, IndianRupee, Loader2, Library, Calendar,
   GraduationCap, UserCheck, UserX, Radio, ImageIcon, MessageSquare, Monitor, Smartphone, LogOut,
-  FileText, Link as LinkIcon,
+  FileText, Link as LinkIcon, LayoutDashboard,
 } from "lucide-react";
 
 import ContentDrillDown from "../components/admin/ContentDrillDown";
@@ -64,7 +65,10 @@ const Admin = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, isAdmin, isLoading: authLoading } = useAuth();
-  const activeTab = searchParams.get("tab") || "courses";
+  // "overview" holds the stat cards + batch-wise summary that used to sit
+  // pinned above the tab strip. Moving them into their own chip keeps the
+  // first paint short on mobile (Screenshot 3 was one long scroll).
+  const activeTab = searchParams.get("tab") || "overview";
   const setActiveTab = (tab: string) => setSearchParams({ tab }, { replace: true });
 
   // Auto-center the active tab in the horizontally scrolling TabsList so its
@@ -587,26 +591,8 @@ const Admin = () => {
           </Button>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4">
-          {stats.map((stat) => (
-            <Card key={stat.label} className={`border-none shadow-sm ${stat.tab ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
-              onClick={() => { if (stat.tab) setActiveTab(stat.tab); }}>
-              <CardContent className="p-2 md:p-4 flex items-center gap-1.5 md:gap-4 min-w-0">
-                <div className={`p-1.5 md:p-3 rounded-md md:rounded-xl shrink-0 ${stat.color}`}>
-                  <stat.icon className="h-3.5 w-3.5 md:h-6 md:w-6" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-base md:text-2xl font-bold text-foreground leading-tight">{stat.value}</p>
-                  <p className="text-[10px] md:text-sm text-muted-foreground font-medium truncate">{stat.label}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Stats grid + batch summary moved into the "Overview" tab below. */}
 
-        {/* Batch-wise student summary (counts + link to Batch Monitor) */}
-        <BatchSummaryCard />
 
 
 
@@ -640,6 +626,7 @@ const Admin = () => {
               className="bg-transparent border-0 rounded-none w-full overflow-x-auto scrollbar-hide flex flex-nowrap h-auto gap-1 p-1 snap-x snap-proximity scroll-px-2"
               data-admin-tabs=""
             >
+            <TabsTrigger data-tab="overview" value="overview" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><LayoutDashboard className="h-4 w-4" />Overview</TabsTrigger>
             <TabsTrigger data-tab="courses" value="courses" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><BookOpen className="h-4 w-4" />Courses</TabsTrigger>
             <TabsTrigger data-tab="live" value="live" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1 text-destructive data-[state=active]:text-destructive"><Radio className="h-4 w-4" />Live</TabsTrigger>
             <TabsTrigger data-tab="payments" value="payments" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1">Payments <Badge variant="destructive" className="ml-1">{statsData.pendingPayments}</Badge></TabsTrigger>
@@ -659,6 +646,33 @@ const Admin = () => {
             <TabsTrigger data-tab="timetable" value="timetable" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><Clock className="h-4 w-4" />Timetable</TabsTrigger>
           </TabsList>
           </div>
+
+          {/* OVERVIEW TAB — stats + batch-wise students (was pinned above the
+              tab strip and made the admin page one very long mobile scroll). */}
+          <TabsContent value="overview">{activeTab === 'overview' && (<>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4 animate-fade-in-up">
+              {stats.map((stat) => (
+                <Card key={stat.label} className={`border-none shadow-sm ${stat.tab ? 'cursor-pointer active:scale-[0.98] transition-transform duration-150' : ''}`}
+                  onClick={() => { if (stat.tab) { void selectionHaptic(); setActiveTab(stat.tab); } }}>
+                  <CardContent className="p-2 md:p-4 flex items-center gap-1.5 md:gap-4 min-w-0">
+                    <div className={`p-1.5 md:p-3 rounded-md md:rounded-xl shrink-0 ${stat.color}`}>
+                      <stat.icon className="h-3.5 w-3.5 md:h-6 md:w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-base md:text-2xl font-bold text-foreground leading-tight tabular-nums">{stat.value}</p>
+                      <p className="text-[10px] md:text-sm text-muted-foreground font-medium truncate">{stat.label}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Batch-wise student summary (counts + link to Batch Monitor) */}
+            <div className="mt-4 md:mt-6">
+              <BatchSummaryCard />
+            </div>
+          </>)}</TabsContent>
+
 
 
 

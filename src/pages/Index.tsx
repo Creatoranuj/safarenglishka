@@ -193,13 +193,27 @@ const Index = () => {
         </section>
         <Hero data={heroData} stats={heroStats} />
         <TrustStrip />
-        <Suspense fallback={<div className="min-h-[200px]" aria-hidden />}>
+        {/* One Suspense per section. A single shared boundary made all seven
+            below-the-fold sections pop in together the instant the chunk
+            resolved — on Android that read as a hard jump and the Telegram /
+            YouTube buttons appeared abruptly. Per-section boundaries with a
+            reserved-height placeholder keep the scroll position stable and let
+            each section fade in on its own. */}
+        <Suspense fallback={<div className="min-h-[420px]" aria-hidden />}>
           <section id="exam-tracks" aria-label="Exam batches"><ExamTracks /></section>
-          <FreeContent />
-          <Testimonials />
+        </Suspense>
+        <Suspense fallback={<div className="min-h-[360px]" aria-hidden />}><FreeContent /></Suspense>
+        <Suspense fallback={<div className="min-h-[320px]" aria-hidden />}><Testimonials /></Suspense>
+        <Suspense fallback={<div className="min-h-[420px]" aria-hidden />}>
           <section id="why-choose-us" aria-label="Our method"><WhyChooseUs /></section>
-          <GraduationBanner />
+        </Suspense>
+        <Suspense fallback={<div className="min-h-[200px]" aria-hidden />}><GraduationBanner /></Suspense>
+        {/* Reserved height matches the rendered strip (py-14 + heading + two
+            h-11 buttons ≈ 360px mobile) so nothing shifts when it swaps in. */}
+        <Suspense fallback={<div className="min-h-[360px]" aria-hidden />}>
           <section id="community" aria-label="Join our community"><CommunityStrip /></section>
+        </Suspense>
+        <Suspense fallback={<div className="min-h-[420px]" aria-hidden />}>
           <section id="lead-form" aria-label="Final CTA"><LeadForm /></section>
         </Suspense>
       </main>

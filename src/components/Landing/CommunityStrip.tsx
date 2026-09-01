@@ -23,13 +23,18 @@ const CommunityStrip = memo(() => {
           practice sets and class schedules. Subscribe on YouTube for full free lessons.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+        {/* The strip is lazy-loaded, so both buttons used to snap into place the
+            moment the chunk resolved. A short staggered fade-up makes the
+            entrance calm instead of abrupt; `animate-fade-in-up` is already
+            reduced-motion-guarded in index.css. min-h keeps the row's height
+            reserved so the fade never shifts surrounding content. */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 min-h-[6.5rem] sm:min-h-11">
           <a
             href="https://t.me/safarenglishka"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => { void tapHaptic("light"); }}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-11 px-6 rounded-md bg-brand-telegram text-white text-sm font-medium hover:bg-brand-telegram-hover active:scale-[0.97] transition-all duration-150 shadow-sm"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-11 px-6 rounded-md bg-brand-telegram text-white text-sm font-medium hover:bg-brand-telegram-hover active:scale-[0.97] transition-all duration-150 shadow-sm animate-fade-in-up [animation-duration:300ms]"
           >
             <Send className="h-4 w-4" />
             Join Telegram
@@ -39,7 +44,7 @@ const CommunityStrip = memo(() => {
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => { void tapHaptic("light"); }}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-11 px-6 rounded-md bg-brand-youtube text-white text-sm font-medium hover:bg-brand-youtube-hover active:scale-[0.97] transition-all duration-150 shadow-sm"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-11 px-6 rounded-md bg-brand-youtube text-white text-sm font-medium hover:bg-brand-youtube-hover active:scale-[0.97] transition-all duration-150 shadow-sm animate-fade-in-up [animation-duration:300ms] [animation-delay:90ms]"
           >
             <Youtube className="h-4 w-4" />
             Subscribe on YouTube

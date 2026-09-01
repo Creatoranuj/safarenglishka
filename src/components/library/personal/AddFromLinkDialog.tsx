@@ -19,7 +19,10 @@ import {
 } from "../../ui/select";
 import { toast } from "sonner";
 import { needsAppToRead, parseLink, SOURCE_LABEL, type ParsedLink } from "../../../lib/linkSources";
-import { saveLinkOffline } from "../../../lib/linkOfflineSave";
+// linkOfflineSave pulls in the download/filesystem stack. It is imported
+// dynamically here (and in FolderView) so it stays out of the library entry
+// chunk — a static import here made FolderView's dynamic import ineffective
+// (rollup INEFFECTIVE_DYNAMIC_IMPORT). Keep both call sites dynamic.
 import { LINKS_FOLDER } from "../../../lib/linkMigration";
 import type { PersonalFolder } from "../../../lib/personalLibraryDB";
 import { useOnlineStatus } from "../../../hooks/useOnlineStatus";
@@ -150,6 +153,7 @@ export default function AddFromLinkDialog({
     const t = toast.loading("Downloading…");
     try {
       const target = await resolveFolderId();
+      const { saveLinkOffline } = await import("../../../lib/linkOfflineSave");
       await saveLinkOffline({
         url: preview.value.url,
         title: preview.value.title,
