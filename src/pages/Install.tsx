@@ -18,12 +18,11 @@ import {
   Package,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import appLogoAsset from "../assets/branding/safar-englishka-logo.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import appLogoAsset from "../assets/branding/safar-englishka-logo.webp";
 import { toast } from "sonner";
 import { openResource } from "../lib/openResource";
 
-const appLogo = getAssetUrl(appLogoAsset);
+const appLogo = appLogoAsset;
 
 // ─── LATEST GITHUB APK LINK ──────────────────────────────────────────────────
 // Fallback used when the GitHub Releases API is unreachable (rate limit /

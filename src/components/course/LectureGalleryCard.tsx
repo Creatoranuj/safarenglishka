@@ -4,14 +4,13 @@ import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
 import { getLessonThumbnail } from "../../lib/videoUtils";
 import { SmartImage } from "../common/SmartImage";
-import checkmarkIconAsset from "../../assets/icons/checkmark-3d.webp.asset.json";
-import scienceIconAsset from "../../assets/icons/science-3d.webp.asset.json";
-import cubeIconAsset from "../../assets/icons/cube-3d.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import checkmarkIconAsset from "../../assets/icons/checkmark-3d.webp";
+import scienceIconAsset from "../../assets/icons/science-3d.webp";
+import cubeIconAsset from "../../assets/icons/cube-3d.webp";
 
-const checkmarkIcon = getAssetUrl(checkmarkIconAsset);
-const scienceIcon = getAssetUrl(scienceIconAsset);
-const cubeIcon = getAssetUrl(cubeIconAsset);
+const checkmarkIcon = checkmarkIconAsset;
+const scienceIcon = scienceIconAsset;
+const cubeIcon = cubeIconAsset;
 
 interface LectureGalleryCardProps {
   id: string;

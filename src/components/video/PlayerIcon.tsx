@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
-import rotateAsset from "@/assets/video/rotate.svg.asset.json";
-import settingsAsset from "@/assets/video/settings.svg.asset.json";
+import rotateAsset from "@/assets/video/rotate.svg";
+import settingsAsset from "@/assets/video/settings.svg";
 
 type PlayerIconKind = "rotate" | "settings";
 
@@ -11,8 +11,8 @@ interface PlayerIconProps {
 }
 
 const SRC: Record<PlayerIconKind, string> = {
-  rotate: rotateAsset.url,
-  settings: settingsAsset.url,
+  rotate: rotateAsset,
+  settings: settingsAsset,
 };
 
 /**

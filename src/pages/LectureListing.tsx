@@ -18,10 +18,9 @@ import { safeGet, safeSet } from "@/lib/storage";
 
 import { LessonAttachmentsSheet } from "../components/lesson/LessonAttachmentsSheet";
 import { toast } from "sonner";
-import doubtsIconAsset from "../assets/icons/doubts-3d.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import doubtsIconAsset from "../assets/icons/doubts-3d.webp";
 
-const doubtsIcon = getAssetUrl(doubtsIconAsset);
+const doubtsIcon = doubtsIconAsset;
 
 interface Lesson {
   id: string;
