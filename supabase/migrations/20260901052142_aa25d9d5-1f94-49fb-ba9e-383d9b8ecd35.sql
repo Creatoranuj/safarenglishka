@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.lessons_course_id_duration_idx;
