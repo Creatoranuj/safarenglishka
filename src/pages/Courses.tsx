@@ -17,6 +17,7 @@ import coursePlaceholder from "../assets/thumbnails/pdf-default.svg";
 import { logger } from "@/lib/logger";
 import { selectionHaptic } from "@/lib/native/haptics";
 import { prefetchIdle } from "@/lib/idlePrefetch";
+import { sanitizeAssetUrl } from "../lib/resolveContentUrl";
 
 
 const Courses = () => {
@@ -102,7 +103,7 @@ const Courses = () => {
         // "Bucket not found" 404 (e.g. Amar Batch course_34 thumbnail).
         const safeData = await Promise.all(
           data.map(async (item: any) => {
-            const rawThumb = item.image_url || item.thumbnail_url;
+            const rawThumb = sanitizeAssetUrl(item.image_url) || sanitizeAssetUrl(item.thumbnail_url);
             const resolvedThumb = rawThumb
               ? (await resolveContentUrl(rawThumb)) ?? rawThumb
               : coursePlaceholder;

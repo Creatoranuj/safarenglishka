@@ -35,6 +35,7 @@ import { SmartImage } from "../components/common/SmartImage";
 import coursePlaceholder from "../assets/thumbnails/pdf-default.svg";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { useEnrollmentArrival } from "../hooks/useEnrollmentArrival";
+import { sanitizeAssetUrl } from "../lib/resolveContentUrl";
 
 
 
@@ -358,8 +359,8 @@ const MyCourses = () => {
           title: course.title,
           description: course.description,
           grade: course.grade,
-          imageUrl: course.image_url,
-          thumbnailUrl: course.thumbnail_url,
+          imageUrl: sanitizeAssetUrl(course.image_url),
+          thumbnailUrl: sanitizeAssetUrl(course.thumbnail_url),
           price: course.price,
           startDate: course.start_date ?? null,
           endDate: course.end_date ?? null,

@@ -29,6 +29,25 @@ const SIGNED_TTL_SECONDS = 60 * 60; // 1h
 // permanent public URLs should upload to `hero-banners` or `books` instead.
 
 
+/**
+ * Lovable-preview asset pointers (`/__l5e/assets-v1/<project>/<file>`) only
+ * resolve on a lovable.app preview/published host. On Vercel and inside the
+ * Capacitor APK the path 404s (or worse, is served the SPA's index.html with a
+ * 200, so `onError` never fires and the slot renders 0x0). Any such value left
+ * in the database is dead — treat it as "no image" so callers fall back to
+ * their placeholder instead of rendering a broken img.
+ */
+const DEAD_LOVABLE_ASSET = /(^|\/)__l5e\/assets(-v\d+)?\//i;
+
+export function isDeadLovableAssetUrl(url: string | null | undefined): boolean {
+  return !!url && DEAD_LOVABLE_ASSET.test(url);
+}
+
+/** Returns `null` for dead Lovable preview asset pointers, else the input. */
+export function sanitizeAssetUrl<T extends string | null | undefined>(url: T): T | null {
+  return isDeadLovableAssetUrl(url) ? null : url;
+}
+
 export function extractContentPath(url: string | null | undefined): string | null {
   if (!url) return null;
   const storageMatch = /^storage:\/\/content\/(.+)$/i.exec(url);
@@ -82,6 +101,7 @@ export async function resolveContentUrl(
   ttlSeconds: number = SIGNED_TTL_SECONDS
 ): Promise<string | null> {
   if (!url) return null;
+  if (isDeadLovableAssetUrl(url)) return null; // dead preview-only pointer
   const path = extractContentPath(url);
   if (!path) return url; // Not a `content` bucket URL — pass through.
 
@@ -117,7 +137,7 @@ export async function resolveContentUrls(
   const pathsToSign: string[] = [];
 
   urls.forEach((url, i) => {
-    if (!url) return;
+    if (!url || isDeadLovableAssetUrl(url)) return;
     const path = extractContentPath(url);
     if (!path) { out[i] = url; return; }
 
