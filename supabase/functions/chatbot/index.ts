@@ -88,8 +88,10 @@ async function isRateLimited(supabase: any, userId: string): Promise<boolean> {
     }
     return nextCount > max;
   } catch (e) {
-    console.error('rate limit check failed:', e);
-    return false;
+    // Fail CLOSED: if the counter cannot be read or written we cannot prove the
+    // caller is under the limit, and an unbounded chatbot loop bills real money.
+    console.error('rate limit check failed, denying request:', e);
+    return true;
   }
 }
 

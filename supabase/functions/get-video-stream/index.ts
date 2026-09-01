@@ -52,6 +52,27 @@ const INVIDIOUS_INSTANCES = [
   "yewtu.be",
 ];
 
+// Discovered instance origins are untrusted input from a third-party list.
+// Reject anything that is not a plain https host name, so a poisoned or
+// compromised list can never aim our fetches at localhost, a private range,
+// or a cloud metadata endpoint.
+const PRIVATE_HOST_RE =
+  /^(localhost|.*\.local|.*\.internal|metadata\.google\.internal)$/i;
+const IP_LITERAL_RE = /^\[|^\d{1,3}(\.\d{1,3}){3}$/;
+
+function isSafeInstanceOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "https:") return false;
+    if (u.username || u.password) return false;
+    if (IP_LITERAL_RE.test(u.hostname)) return false;
+    if (PRIVATE_HOST_RE.test(u.hostname)) return false;
+    return u.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
 let healthyPipedInstances: string[] = [];
 let lastInstanceRefresh = 0;
 const INSTANCE_REFRESH_INTERVAL = 10 * 60 * 1000;
@@ -74,7 +95,7 @@ async function refreshInstances(): Promise<void> {
           .map((d: any) => {
             try { return new URL(d.api_url).origin; } catch { return null; }
           })
-          .filter(Boolean) as string[];
+          .filter((o): o is string => !!o && isSafeInstanceOrigin(o));
         if (apis.length > 0) {
           healthyPipedInstances = apis.slice(0, 6);
           console.log(`[discovery] Found ${apis.length} Piped instances, using ${healthyPipedInstances.length}: ${healthyPipedInstances.join(', ')}`);

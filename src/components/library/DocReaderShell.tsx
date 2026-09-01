@@ -511,13 +511,22 @@ export default function DocReaderShell({
     <div ref={shellRef} className="nb-reader-surface fixed inset-0 z-[60] flex motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-testid="doc-reader-shell">
       {/* Opaque band behind the status bar / notch. Without it a white strip
           from the page background bleeds through above the PDF (browser and
-          Capacitor WebView alike). Not inside the rotation frame on purpose. */}
-      <div
-        aria-hidden="true"
-        data-testid="reader-notch-band"
-        className="pointer-events-none fixed inset-x-0 top-0 z-[75] bg-black"
-        style={{ height: "env(safe-area-inset-top, 0px)" }}
-      />
+          Capacitor WebView alike). Not inside the rotation frame on purpose.
+
+          Rendered ONLY in portrait while the chrome is visible:
+          - once the chrome hides, the PDF surface collapses to top:0 and a
+            leftover band would cover the first lines of the page;
+          - in landscape (native lock or CSS rotation) the notch inset is along
+            the side, so a band across the physical top is exactly the strip
+            reported as "the header does not hide all the way". */}
+      {headerVisible && !landscape && !pseudoLandscape && (
+        <div
+          aria-hidden="true"
+          data-testid="reader-notch-band"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[75] bg-black"
+          style={{ height: "env(safe-area-inset-top, 0px)" }}
+        />
+      )}
       {/* Center column — this is also the pseudo-landscape rotation frame, so
           header, PDF surface, FABs and the page chip all rotate together. */}
       <div
@@ -537,8 +546,18 @@ export default function DocReaderShell({
           className={`safe-area-top absolute left-0 right-0 top-0 z-50 flex min-h-[48px] items-center gap-2 border-b bg-card/95 px-3 shadow-sm backdrop-blur transition-[transform,opacity] duration-300 ${
             headerVisible
               ? "translate-y-0 opacity-100 pointer-events-auto"
-              : "-translate-y-full opacity-0 invisible pointer-events-none"
+              : "opacity-0 invisible pointer-events-none"
           }`}
+          // Percentage translate resolves against the element's own box, and
+          // inside the rotated frame Android WebViews rounded it down enough to
+          // leave a hairline of the bar painted along the top edge. Move it by
+          // its measured height PLUS the status-bar inset and a few extra px so
+          // it is provably off-frame on every device.
+          style={
+            headerVisible
+              ? undefined
+              : { transform: `translateY(calc(-${headerHeight + 8}px - env(safe-area-inset-top, 0px)))` }
+          }
           aria-hidden={!headerVisible}
 
           onClick={(e) => e.stopPropagation()}
