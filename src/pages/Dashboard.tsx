@@ -34,6 +34,7 @@ import bellIconAsset from "../assets/icons/bell-3d.webp";
 import performanceIconAsset from "../assets/icons/performance-3d.webp";
 import UpcomingLiveSessions from "../components/live/UpcomingLiveSessions";
 import { Video } from "lucide-react";
+import { sanitizeAssetUrl } from "../lib/resolveContentUrl";
 
 const cubeIcon = cubeIconAsset;
 const checkmarkIcon = checkmarkIconAsset;
@@ -198,8 +199,8 @@ const Dashboard = () => {
                 title: e.course?.title,
                 description: e.course?.description,
                 grade: e.course?.grade,
-                imageUrl: e.course?.image_url,
-                thumbnailUrl: e.course?.thumbnail_url,
+                imageUrl: sanitizeAssetUrl(e.course?.image_url),
+                thumbnailUrl: sanitizeAssetUrl(e.course?.thumbnail_url),
                 progressPercent: pct,
               };
             });

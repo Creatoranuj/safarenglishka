@@ -20,6 +20,7 @@ import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { logger } from "@/lib/logger";
 import successSound from "@/assets/success.mp3";
 import AccessCountdown from "../components/courses/AccessCountdown";
+import { sanitizeAssetUrl } from "../lib/resolveContentUrl";
 
 
 const MERCHANT_NAME = "Safar English";
@@ -194,8 +195,8 @@ const BuyCourse = () => {
               description: data.description,
               grade: data.grade,
               price: data.price ?? 0,
-              thumbnailUrl: resolvedThumb ?? data.thumbnail_url,
-              imageUrl: resolvedImage ?? data.image_url,
+              thumbnailUrl: resolvedThumb ?? sanitizeAssetUrl(data.thumbnail_url),
+              imageUrl: resolvedImage ?? sanitizeAssetUrl(data.image_url),
             });
 
 

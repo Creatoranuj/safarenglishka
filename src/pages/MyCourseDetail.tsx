@@ -25,6 +25,7 @@ import { readBundleSync as readChapterBundleSync, writeBundle as writeChapterBun
 import { isNative as isNativePlatform } from "../lib/platform";
 import StudyMaterialsList from "../components/course/StudyMaterialsList";
 import { prefetchIdle } from "../lib/idlePrefetch";
+import { sanitizeAssetUrl } from "../lib/resolveContentUrl";
 
 interface Lesson {
   id: string;
@@ -220,7 +221,7 @@ const MyCourseDetail = () => {
       const cd: any = courseRes.data;
       const courseObj: Course = {
         id: cd.id, title: cd.title, description: cd.description,
-        grade: cd.grade, imageUrl: cd.image_url, thumbnailUrl: cd.thumbnail_url,
+        grade: cd.grade, imageUrl: sanitizeAssetUrl(cd.image_url), thumbnailUrl: sanitizeAssetUrl(cd.thumbnail_url),
       };
 
       const mappedLessons: Lesson[] = (lessonsRes.data || []).map((l: any, idx: number) => ({
@@ -229,7 +230,7 @@ const MyCourseDetail = () => {
         position: l.position || idx + 1, youtubeId: l.youtube_id, createdAt: l.created_at,
         duration: l.duration, chapterId: l.chapter_id,
         classPdfUrl: l.class_pdf_url ?? null,
-        thumbnailUrl: l.thumbnail_url ?? null,
+        thumbnailUrl: sanitizeAssetUrl(l.thumbnail_url) ?? null,
       }));
 
       const completedRows = progressRes.data;
@@ -273,7 +274,7 @@ const MyCourseDetail = () => {
           id: ch.id, code: ch.code, title: ch.title, position: ch.position, parent_id: ch.parent_id,
           lessonCount: ids.reduce((s, cid) => s + (lessonCountMap[cid] || 0), 0),
           completedLessons: ids.reduce((s, cid) => s + (completedCountMap[cid] || 0), 0),
-          thumbnailUrl: ch.thumbnail_url ?? null,
+          thumbnailUrl: sanitizeAssetUrl(ch.thumbnail_url) ?? null,
         };
       });
 
