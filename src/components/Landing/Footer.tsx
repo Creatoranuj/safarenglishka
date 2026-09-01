@@ -2,15 +2,14 @@ import { useMemo, forwardRef } from "react";
 import { Link } from "react-router-dom";
 import { Mail, Phone, Shield, ArrowUpRight, Sparkles } from "lucide-react";
 import logoIcon from "../../assets/branding/nb-mark.webp";
-import messengerIconAsset from "../../assets/social/messenger-green.webp.asset.json";
-import broadcastIconAsset from "../../assets/social/broadcast-blue.webp.asset.json";
-import videosIconAsset from "../../assets/social/videos-red.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import messengerIconAsset from "../../assets/social/messenger-green.webp";
+import broadcastIconAsset from "../../assets/social/broadcast-blue.webp";
+import videosIconAsset from "../../assets/social/videos-red.webp";
 import { WHATSAPP_NUMBER } from "../common/WhatsAppButton";
 
-const messengerIcon = getAssetUrl(messengerIconAsset);
-const broadcastIcon = getAssetUrl(broadcastIconAsset);
-const videosIcon = getAssetUrl(videosIconAsset);
+const messengerIcon = messengerIconAsset;
+const broadcastIcon = broadcastIconAsset;
+const videosIcon = videosIconAsset;
 
 const Footer = forwardRef<HTMLElement>((_, ref) => {
   const currentYear = useMemo(() => new Date().getFullYear(), []);

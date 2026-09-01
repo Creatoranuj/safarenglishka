@@ -18,7 +18,7 @@ import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { logger } from "@/lib/logger";
-import successSound from "@/assets/success.mp3.asset.json";
+import successSound from "@/assets/success.mp3";
 import AccessCountdown from "../components/courses/AccessCountdown";
 
 
@@ -26,7 +26,7 @@ const MERCHANT_NAME = "Safar English";
 // Self-hosted via Lovable CDN — no third-party dependency, works offline
 // with cached CDN response, and satisfies the app-wide "no unlisted external
 // host" invariant (was pixabay.com which is not in network_security_config).
-const SUCCESS_SOUND_URL = successSound.url;
+const SUCCESS_SOUND_URL = successSound;
 
 const BuyCourse = () => {
   const [searchParams] = useSearchParams();

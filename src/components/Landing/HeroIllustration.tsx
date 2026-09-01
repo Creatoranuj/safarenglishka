@@ -1,12 +1,11 @@
 import { memo } from "react";
 import { Play, Send } from "lucide-react";
-import rajSirAsset from "../../assets/landing/raj-sir.webp.asset.json";
-import studentGirlAsset from "../../assets/landing/student-girl.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import rajSirAsset from "../../assets/landing/raj-sir.webp";
+import studentGirlAsset from "../../assets/landing/student-girl.webp";
 import { selectionHaptic } from "@/lib/native/haptics";
 
-const rajSirUrl = getAssetUrl(rajSirAsset);
-const studentGirlUrl = getAssetUrl(studentGirlAsset);
+const rajSirUrl = rajSirAsset;
+const studentGirlUrl = studentGirlAsset;
 
 /**
  * Dual-bubble hero: student girl (large, top-right) + Raj Sir (medium,

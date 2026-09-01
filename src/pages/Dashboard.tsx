@@ -26,22 +26,21 @@ import LiveBadge from "../components/live/LiveBadge";
 import { SmartImage } from "../components/common/SmartImage";
 import coursePlaceholder from "../assets/thumbnails/pdf-default.svg";
 
-import cubeIconAsset from "../assets/icons/cube-3d.webp.asset.json";
-import checkmarkIconAsset from "../assets/icons/checkmark-3d.webp.asset.json";
-import doubtsIconAsset from "../assets/icons/doubts-3d.webp.asset.json";
-import libraryIconAsset from "../assets/icons/library-3d.webp.asset.json";
-import bellIconAsset from "../assets/icons/bell-3d.webp.asset.json";
-import performanceIconAsset from "../assets/icons/performance-3d.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import cubeIconAsset from "../assets/icons/cube-3d.webp";
+import checkmarkIconAsset from "../assets/icons/checkmark-3d.webp";
+import doubtsIconAsset from "../assets/icons/doubts-3d.webp";
+import libraryIconAsset from "../assets/icons/library-3d.webp";
+import bellIconAsset from "../assets/icons/bell-3d.webp";
+import performanceIconAsset from "../assets/icons/performance-3d.webp";
 import UpcomingLiveSessions from "../components/live/UpcomingLiveSessions";
 import { Video } from "lucide-react";
 
-const cubeIcon = getAssetUrl(cubeIconAsset);
-const checkmarkIcon = getAssetUrl(checkmarkIconAsset);
-const doubtsIcon = getAssetUrl(doubtsIconAsset);
-const libraryIcon = getAssetUrl(libraryIconAsset);
-const bellIcon = getAssetUrl(bellIconAsset);
-const performanceIcon = getAssetUrl(performanceIconAsset);
+const cubeIcon = cubeIconAsset;
+const checkmarkIcon = checkmarkIconAsset;
+const doubtsIcon = doubtsIconAsset;
+const libraryIcon = libraryIconAsset;
+const bellIcon = bellIconAsset;
+const performanceIcon = performanceIconAsset;
 
 
 const studentQuickActions = [

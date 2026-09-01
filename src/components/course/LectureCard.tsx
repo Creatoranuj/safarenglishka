@@ -4,13 +4,12 @@ import { cn } from "../../lib/utils";
 import { format } from "date-fns";
 import { getLessonThumbnail } from "../../lib/videoUtils";
 import { SmartImage } from "../common/SmartImage";
-import scienceIconAsset from "../../assets/icons/science-3d.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import scienceIconAsset from "../../assets/icons/science-3d.webp";
 import PdfIcon from "../common/PdfIcon";
 import MinimalDocIcon from "../common/MinimalDocIcon";
 import pdfIconSvg from "../../assets/pdf-icon-grayscale.svg";
 
-const scienceIcon = getAssetUrl(scienceIconAsset);
+const scienceIcon = scienceIconAsset;
 
 export interface LectureCardProps {
   id: string;
