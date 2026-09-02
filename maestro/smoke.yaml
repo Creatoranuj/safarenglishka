@@ -45,7 +45,19 @@ androidWebViewHierarchy: devtools
 # exceed 180s during cold WebView parse on contended GitHub runners.
 - extendedWaitUntil:
     visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
-    timeout: 300000
+    timeout: 240000
+    optional: true
+# Run #49 died here even though the landing page had painted: the software-GPU
+# emulator stalled the main thread long enough for Android to raise the
+# "Safar English isn't responding" ANR dialog, which covers the screen and
+# makes every text assertion false. Dismiss it with "Wait" (no-op when the
+# dialog never appeared), then re-assert for real.
+- tapOn:
+    text: "Wait"
+    optional: true
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    timeout: 120000
 # Regression guard for `device_integrity_suspicious` Sentry noise: the toast
 # must NOT appear on cold launch on the CI emulator. `isVirtual` alone should
 # be a silent breadcrumb, not a user-facing warning. See
