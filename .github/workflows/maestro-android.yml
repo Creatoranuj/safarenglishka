@@ -115,12 +115,12 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-boot-timeout: 900
-          # -memory/-cores raised from the 2048MB/2-core default: runs #49 and
-          # #50 both died on system-wide ANR dialogs ("Safar English isn't
-          # responding", then "Pixel Launcher isn't responding") while the
-          # landing page was already painted behind them. The emulator was
-          # simply starved on a software GPU.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 6144 -cores 4
+          # RAM raised to 4GB (runs #49/#50 died on system-wide ANR dialogs
+          # with the landing page already painted behind them). Cores stay at
+          # 2: ubuntu-latest only has 4, and handing the emulator all of them
+          # in run #54 starved the host until the emulator process itself
+          # vanished mid-flow ("device 'emulator-5554' not found").
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -cores 2
 
           script: |
             set -e
@@ -137,8 +137,6 @@ jobs:
             # so switching Gboard off removes the race without losing input.
             adb shell settings put secure show_ime_with_hard_keyboard 0 || true
             adb shell ime disable com.google.android.inputmethod.latin || true
-            # Belt and braces even on google_atd.
-            adb shell pm disable-user --user 0 com.google.android.apps.maps || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
             # DO NOT `export` here and reference $VAR below: this runner
