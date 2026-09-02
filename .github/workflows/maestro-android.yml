@@ -92,6 +92,16 @@ jobs:
 
 
 
+      # Runs #54 and #58 both ended with the emulator PROCESS gone, not the
+      # driver: "device 'emulator-5554' not found" and then "could not connect
+      # to TCP port 5554: Connection refused". That is a host-side kill, so
+      # record the host's memory picture before we launch qemu.
+      - name: 🩺 Host resources before emulator
+        run: |
+          free -m
+          nproc
+          df -h /
+
       - name: 📥 Install Maestro
         run: |
           curl -fsSL https://get.maestro.mobile.dev | bash
@@ -139,6 +149,11 @@ jobs:
             adb shell ime disable com.google.android.inputmethod.latin || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
+            # Sample host memory every 5s for the length of the flow. If qemu
+            # is being OOM-killed this file shows available memory collapsing
+            # just before the "device not found" error.
+            (while true; do echo "$(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3" avail="$7}')"; sleep 5; done) > "$HOME/host-mem.log" 2>&1 &
+
             # DO NOT `export` here and reference $VAR below: this runner
             # executes each script line as its own `/usr/bin/sh -c`, so exports
             # never survive to the next line. Run #51's log proves it — the
@@ -159,6 +174,11 @@ jobs:
             # Secondary flows stay non-blocking — they cover optional paths
             # (pdf viewer back-nav, cold-start deep link) that flake on cold
             # emulators but shouldn't gate release.
+            # Stop the sampler and surface the tail inline, so triage does not
+            # need the artifact for the common case.
+            kill %1 2>/dev/null || true
+            tail -20 "$HOME/host-mem.log" || true
+
             maestro test maestro/pdf-back.yaml || true
             maestro test maestro/back-button-cold-start.yaml || true
 
@@ -169,9 +189,19 @@ jobs:
           name: maestro-report
           path: |
             maestro-report.xml
+            ~/host-mem.log
             ~/.maestro/tests/**/*
           retention-days: 14
           if-no-files-found: ignore
+
+      - name: 🩺 OOM evidence (on failure)
+        if: failure()
+        run: |
+          free -m
+          echo "--- kernel OOM kills ---"
+          sudo dmesg -T 2>/dev/null | grep -iE "killed process|out of memory|oom-kill" | tail -20 || echo "none"
+          echo "--- host memory samples ---"
+          tail -40 "$HOME/host-mem.log" 2>/dev/null || echo "no samples"
 
       # On any failure (typically a pre-Maestro gradle compile error, as in
       # run #1), grab gradle's build reports + logs so the next triage pass
