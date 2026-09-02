@@ -3,13 +3,21 @@ name: Maestro Android E2E
 # Real-device-style end-to-end smoke on an Android emulator using Maestro.
 # Manual-dispatch only (emulator boots are slow ~10-15 min) plus optional
 # nightly cron. Builds a debug APK, boots an emulator, installs the APK,
-# then runs `maestro/*.yaml` flows.
+# then runs the split gates in `maestro/`.
 #
 # Requires GitHub repo secrets (already configured):
 #   MAESTRO_EMAIL, MAESTRO_PASSWORD
+#
+# Flow order (see maestro/smoke.yaml — it is only a composition):
+#   login.yaml (gate) -> nav.yaml (gate) -> pdf-back / back-button (advisory)
 
 on:
   workflow_dispatch:
+    inputs:
+      gate:
+        description: 'Fail the job when the smoke gates fail'
+        type: boolean
+        default: true
   schedule:
     # Nightly 04:30 UTC — off-peak so it doesn't fight with release builds
     - cron: '30 4 * * *'
@@ -24,6 +32,9 @@ concurrency:
 # prevents the "invalid source release: 21" drift that failed maestro run #1.
 env:
   JAVA_VERSION: '21'
+  # Pin the driver. An unpinned `get.maestro.mobile.dev` install means an
+  # upstream driver change can turn the gate red overnight with no repo change.
+  MAESTRO_VERSION: '1.39.0'
 
 jobs:
   android-e2e:
@@ -39,6 +50,24 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      # Secrets guard. Run #51 submitted an empty login form because the env
+      # vars were empty, and the failure surfaced 120s later as a dashboard
+      # assertion. Fail in 1s with a message that names the missing secret.
+      - name: 🔐 Verify Maestro credentials are configured
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        run: |
+          set -e
+          missing=""
+          [ -n "$MAESTRO_EMAIL" ] || missing="$missing MAESTRO_EMAIL"
+          [ -n "$MAESTRO_PASSWORD" ] || missing="$missing MAESTRO_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repo secret(s):$missing — the login gate cannot run. Add them in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "Both Maestro credentials are present."
 
       - name: 🧩 Enable KVM for the Android emulator
         run: |
@@ -63,6 +92,15 @@ jobs:
 
       - name: 📦 Install deps
         run: bun install --frozen-lockfile --ignore-scripts
+
+      # Parse every flow before spending 15 minutes on an emulator. A YAML typo
+      # used to surface only after the boot, install and login had run.
+      - name: ✅ Validate Maestro flows
+        run: |
+          set -e
+          for f in maestro/*.yaml maestro/split-smoke/*.yaml; do
+            bunx js-yaml "$f" > /dev/null && echo "ok  $f"
+          done
 
       - name: 🏗️ Build web assets
         env:
@@ -104,7 +142,7 @@ jobs:
 
       - name: 📥 Install Maestro
         run: |
-          curl -fsSL https://get.maestro.mobile.dev | bash
+          curl -fsSL https://get.maestro.mobile.dev | MAESTRO_VERSION="${MAESTRO_VERSION}" bash
           echo "$HOME/.maestro/bin" >> $GITHUB_PATH
 
       - name: 🤖 Run Android emulator + Maestro flows
@@ -142,6 +180,10 @@ jobs:
           # fault can no longer kill the emulator process.
           emulator-options: -no-window -gpu guest -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -camera-back none -memory 4096 -cores 2
 
+          # NOTE: this runner executes the script under /usr/bin/sh (dash) and
+          # each line in its own `sh -c`. Never use `set -o pipefail` (dash
+          # aborts on line 1) and never rely on `export` surviving to the next
+          # line (run #51 proved it does not) — interpolate secrets inline.
           script: |
             set -e
             # Suppress ANR/crash dialogs at the OS level. Tapping "Wait" from
@@ -164,22 +206,28 @@ jobs:
             # just before the "device not found" error.
             (while true; do echo "$(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3" avail="$7}')"; sleep 5; done) > "$HOME/host-mem.log" 2>&1 &
 
-            # DO NOT `export` here and reference $VAR below: this runner
-            # executes each script line as its own `/usr/bin/sh -c`, so exports
-            # never survive to the next line. Run #51's log proves it — the
-            # export lines ran, then `maestro test --env MAESTRO_EMAIL=""`
-            # submitted an empty form and the login screen answered "Please
-            # fill in all fields". Interpolate the secrets into the one command
-            # that needs them.
-            # Smoke is the gate — it must fail the job when it fails. The
-            # previous `|| echo "smoke failed"` swallowed real regressions and
-            # let the job report green while login/dashboard were broken.
+            # Evidence BEFORE assertions. Runs #47/#48 both burned a full cycle
+            # guessing at the login form's node structure; this dump is uploaded
+            # unconditionally so the next triage reads it instead of guessing.
+            adb shell monkey -p com.safarenglishka.app -c android.intent.category.LAUNCHER 1 || true
+            sleep 25
+            maestro hierarchy > "$HOME/hierarchy-launch.txt" 2>&1 || true
+            head -60 "$HOME/hierarchy-launch.txt" || true
+            adb shell am force-stop com.safarenglishka.app || true
+
+            # Gate 1: login. Fails loud and early when auth or the form breaks.
             # One retry: the emulator's gRPC driver dies mid-flow on shared
             # runners (run #56: DeviceServerDiedException on 'viewHierarchy',
             # UNAVAILABLE after 38s of silence). That is infrastructure, not a
             # product regression, and a second attempt on the same booted
             # emulator clears it. A real failure still fails twice and gates.
-            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml || maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/login.yaml --format junit --output maestro-login.xml || maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/login.yaml --format junit --output maestro-login.xml
+
+            # Gate 2: navigation, on the session login.yaml just created.
+            maestro test maestro/nav.yaml --format junit --output maestro-nav.xml || maestro test maestro/nav.yaml --format junit --output maestro-nav.xml
+
+            # Post-failure/success hierarchy snapshot for the artifact.
+            maestro hierarchy > "$HOME/hierarchy-final.txt" 2>&1 || true
 
             # Secondary flows stay non-blocking — they cover optional paths
             # (pdf viewer back-nav, cold-start deep link) that flake on cold
@@ -198,8 +246,11 @@ jobs:
         with:
           name: maestro-report
           path: |
-            maestro-report.xml
+            maestro-login.xml
+            maestro-nav.xml
             ~/host-mem.log
+            ~/hierarchy-launch.txt
+            ~/hierarchy-final.txt
             ~/.maestro/tests/**/*
           retention-days: 14
           if-no-files-found: ignore
@@ -212,6 +263,8 @@ jobs:
           sudo dmesg -T 2>/dev/null | grep -iE "killed process|out of memory|oom-kill" | tail -20 || echo "none"
           echo "--- host memory samples ---"
           tail -40 "$HOME/host-mem.log" 2>/dev/null || echo "no samples"
+          echo "--- launch hierarchy (first 80 lines) ---"
+          head -80 "$HOME/hierarchy-launch.txt" 2>/dev/null || echo "no hierarchy dump"
 
       # On any failure (typically a pre-Maestro gradle compile error, as in
       # run #1), grab gradle's build reports + logs so the next triage pass
