@@ -57,10 +57,47 @@ const Profile = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authProfile?.id, authProfile?.fullName, authProfile?.avatarUrl, authProfile?.mobile]);
 
-  // Self-profile fetch removed — AuthContext seeds the shared React Query
-  // cache on every SIGNED_IN / USER_UPDATED. Any refresh path goes through
-  // `refetchUserData()` (called after Save) which updates the same cache
-  // and re-hydrates `authProfile` via the effect above.
+  // Fallback self-fetch. AuthContext normally seeds the shared React Query
+  // cache on SIGNED_IN / USER_UPDATED, but when that seed never lands (cache
+  // miss, transient network error, missing `profiles` row) the page used to
+  // sit on the skeleton FOREVER — no retry, no error, and no reachable
+  // "Sign Out". Maestro run #65 failed exactly there: the "Profile" header
+  // rendered, the body never did. This is the safety net for that path.
+  const [fallbackState, setFallbackState] = useState<"idle" | "loading" | "error">("idle");
+  const [fetchNonce, setFetchNonce] = useState(0);
+
+  useEffect(() => {
+    if (profile || authProfile) return;
+    let cancelled = false;
+    setFallbackState("loading");
+    (async () => {
+      try {
+        const uid = authUser?.id ?? (await supabase.auth.getUser()).data.user?.id;
+        if (!uid) throw new Error("no authenticated user");
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, email, full_name, avatar_url, mobile")
+          .eq("id", uid)
+          .maybeSingle();
+        if (error) throw error;
+        if (cancelled) return;
+        if (!data) throw new Error("no profile row for this user");
+        setProfile(data);
+        setNameInput(data.full_name ?? "");
+        setMobileInput(data.mobile ?? "");
+        setFallbackState("idle");
+      } catch (err) {
+        if (cancelled) return;
+        logger.error("Profile fallback fetch failed", err);
+        setFallbackState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authProfile?.id, authUser?.id, fetchNonce]);
+
 
   const handleSave = async () => {
     if (!profile) return;
@@ -87,10 +124,12 @@ const Profile = () => {
     }
   };
 
-  // No more fullPage spinner — render immediately from the auth cache.
-  // On cold refresh we may not have `profile` yet; show a lightweight
-  // skeleton (header + banner) so the page never looks like a crash.
+  // Two distinct no-data states, never a dead end:
+  //   - loading  -> bounded skeleton while the fallback fetch is in flight
+  //   - error    -> explicit message + Try again + Sign Out (Play Store
+  //                 requires account controls to stay reachable)
   if (!profile) {
+    const failed = fallbackState === "error";
     return (
       <div className="min-h-dvh bg-background flex flex-col">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -100,21 +139,49 @@ const Profile = () => {
           <h1 className="text-lg font-semibold text-primary-foreground">Profile</h1>
         </div>
         <main className="flex-1 p-4 space-y-4 pb-20 md:pb-6">
-          <div className="flex flex-col items-center py-6 gap-3">
-            <div className="h-20 w-20 rounded-full bg-muted animate-pulse" />
-            <div className="h-5 w-40 rounded bg-muted animate-pulse" />
-            <div className="h-3 w-20 rounded bg-muted animate-pulse" />
-          </div>
-          <div className="bg-card rounded-2xl border border-border p-6 space-y-4">
-            <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
-            <div className="h-10 w-full rounded bg-muted animate-pulse" />
-            <div className="h-10 w-full rounded bg-muted animate-pulse" />
-            <div className="h-10 w-full rounded bg-muted animate-pulse" />
-          </div>
+          {failed ? (
+            <div
+              data-testid="profile-load-error"
+              className="bg-card rounded-2xl border border-border p-6 space-y-4 text-center"
+            >
+              <h3 className="text-lg font-semibold text-foreground">Profile Unavailable</h3>
+              <p className="text-sm text-muted-foreground">
+                We could not load your profile details. Check your connection and try again.
+              </p>
+              <Button onClick={() => setFetchNonce((n) => n + 1)} className="w-full gap-2">
+                <RefreshCw className="h-4 w-4" /> Try Again
+              </Button>
+              <Button
+                onClick={handleLogout}
+                variant="outline"
+                className="w-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground gap-2"
+              >
+                <LogOut className="h-5 w-5" /> Sign Out
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col items-center py-6 gap-3">
+                <div className="h-20 w-20 rounded-full bg-muted animate-pulse" />
+                <div className="h-5 w-40 rounded bg-muted animate-pulse" />
+                <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+              </div>
+              <div
+                data-testid="profile-loading"
+                className="bg-card rounded-2xl border border-border p-6 space-y-4"
+              >
+                <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
+                <div className="h-10 w-full rounded bg-muted animate-pulse" />
+                <div className="h-10 w-full rounded bg-muted animate-pulse" />
+                <div className="h-10 w-full rounded bg-muted animate-pulse" />
+              </div>
+            </>
+          )}
         </main>
       </div>
     );
   }
+
 
   return (
     <div className="min-h-dvh bg-background flex flex-col">
