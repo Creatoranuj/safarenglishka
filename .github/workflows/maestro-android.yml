@@ -104,12 +104,23 @@ jobs:
 
       - name: 🏗️ Build web assets
         env:
+          # Maestro's `androidWebViewHierarchy: devtools` reads the DOM over the
+          # WebView remote-debugging protocol. capacitor.config.ts only enables
+          # `webContentsDebuggingEnabled` when CAP_DEBUG=1, so without this the
+          # devtools hierarchy is empty and every assertion fails "is visible"
+          # (runs #66 and #71 died exactly there, on a healthy emulator).
+          # E2E debug APK only — release builds never set this.
+          CAP_DEBUG: '1'
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: bun run build
 
       - name: 🔁 Cap sync
+        # cap sync bakes capacitor.config.ts into android assets — CAP_DEBUG must
+        # be present HERE too or the copied config keeps debugging disabled.
+        env:
+          CAP_DEBUG: '1'
         run: bunx cap sync android
 
       # `gradlew` loses its executable bit on a fresh checkout (core.fileMode),
