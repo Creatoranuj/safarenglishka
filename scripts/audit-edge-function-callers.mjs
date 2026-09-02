@@ -26,7 +26,10 @@ const BACKEND_ONLY_ALLOWLIST = new Set([
   "notify-ai",                // triggered by Supabase DB webhook, not UI
   "send-phone-otp",           // phone OTP feature temp-disabled (PhoneLogin.tsx); keep for re-enable
   "verify-phone-otp",         // pair of send-phone-otp
+  "ai-health",                // ops/uptime probe, hit by monitors — no UI caller by design
+  "fetch-youtube-transcript", // called server-side by resolve-doubt/index.ts, not from src/
 ]);
+
 
 
 function listFunctions() {
