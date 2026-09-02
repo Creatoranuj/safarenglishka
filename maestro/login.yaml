@@ -46,22 +46,51 @@ androidWebViewHierarchy: devtools
     visible: "Welcome Back|Email Address|Email"
     timeout: 60000
 
-# Duplicate resource ids: the label (<label for="email">) and the real
-# <input id="email"> BOTH surface as id "email" (runs #47/#48 typed into the
-# label and submitted an empty form). index: 1 selects the input.
+# Field focus — matcher ladder, not a single guess.
+#
+# Run #61 proved the driver does NOT expose DOM ids on this build: every text
+# matcher above passed, then `id: "email"` failed with "Element not found: Id
+# matching regex: email" after 30s. So the hierarchy in play is the Android
+# accessibility tree, where a WebView <input> surfaces as an EditText whose
+# text is "<aria-label> <placeholder>" (run #48 dump: `EditText '|Email Address
+# you@example.com|`) and carries no resource-id.
+#
+# Ladder, all optional so either hierarchy mode works:
+#   1. composite a11y text (accessibility tree)
+#   2. id + index: 1 (devtools/DOM mode; index skips the <label for=…>)
+#   3. bare label text (label click focuses the input via htmlFor)
+# If every rung misses, inputText goes nowhere and the empty-field guard below
+# fails the flow in ~2s with an unambiguous message.
+- tapOn:
+    text: "Email Address you@example.com"
+    optional: true
 - tapOn:
     id: "email"
     index: 1
+    optional: true
+- tapOn:
+    text: "Email Address"
+    optional: true
 - inputText: ${MAESTRO_EMAIL}
 # API 35 IME bug: hide the keyboard between fields so the next tap does not
 # race the soft-keyboard animation and deadlock the gRPC channel (run #52).
 - hideKeyboard
 
+# "Password" is case-sensitive here, so it does not collide with the
+# "Forgot password?" link.
+- tapOn:
+    text: "Password ••••••••"
+    optional: true
 - tapOn:
     id: "password"
     index: 1
+    optional: true
+- tapOn:
+    text: "^Password$"
+    optional: true
 - inputText: ${MAESTRO_PASSWORD}
 - hideKeyboard
+
 
 - scrollUntilVisible:
     element:

@@ -21,9 +21,11 @@ describe("signed APK smoke regression guards", () => {
     // "Profile" alone is the bottom-nav label and stays visible even when the
     // tab never opened, so the assertion must be built from page-body copy.
     expect(nav).toContain('visible: "Personal Information|Sign Out|Account Settings"');
-    // The profile tap must stay non-optional (run #55 silently skipped it).
+    // Every id matcher needs a text fallback: run #61 proved the driver does
+    // not expose DOM ids, so an id-only tap silently misses the tab.
     expect(nav).toContain('id: "bottom-nav-profile"');
-    expect(nav).not.toMatch(/id: "bottom-nav-profile"\n\s+optional: true/);
+    expect(nav).toContain('text: "^Profile$"');
+    expect(nav).toContain('text: "^Settings$"');
   });
 
   it("fails fast when the login form was submitted empty", () => {
@@ -33,6 +35,10 @@ describe("signed APK smoke regression guards", () => {
     // token. index: 1 selects the real input; the guard fails in ~2s instead.
     expect(login).toContain('id: "email"');
     expect(login).toContain("index: 1");
+    // a11y-tree fallback: the WebView input surfaces as an EditText whose text
+    // is "<aria-label> <placeholder>" and carries no resource-id (run #61).
+    expect(login).toContain('text: "Email Address you@example.com"');
+    expect(login).toContain('text: "Password ••••••••"');
     expect(login).toContain('text: "Please fill in all fields"');
   });
 

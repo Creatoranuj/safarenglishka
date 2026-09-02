@@ -1,0 +1,25 @@
+# Diagnostic-only flow. Never gates.
+#
+# Purpose: leave the emulator sitting on the Login screen so the workflow can
+# run `maestro hierarchy` against it and upload the real node structure.
+# Run #61 failed with "Element not found: Id matching regex: email" — the text
+# matchers worked but the id matchers did not, which means the hierarchy the
+# driver actually sees is not what the flow assumed. Stop guessing: dump it.
+appId: com.safarenglishka.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Courses|Welcome Back|Login|Sign In|Get Started"
+    timeout: 180000
+    optional: true
+- tapOn:
+    text: "Wait"
+    optional: true
+- tapOn:
+    text: "Login|Sign In|Log In|Get Started"
+    optional: true
+- extendedWaitUntil:
+    visible: "Welcome Back|Email Address|Email"
+    timeout: 60000
+    optional: true

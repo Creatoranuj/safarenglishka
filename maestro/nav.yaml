@@ -34,11 +34,16 @@ androidWebViewHierarchy: devtools
     visible: "Downloads|No downloads|Saved"
     timeout: 20000
 
-# 3) Profile — the tap is NOT optional. Run #55 made it optional, the tap did
-# nothing, and the assertion still passed because "Profile" is a bottom-nav
-# label present on every screen. Assert page-body copy only.
+# 3) Profile. Run #61 proved DOM ids are not exposed in the hierarchy the
+# driver actually uses, so every id matcher gets a text fallback. Both rungs
+# are optional; the assertion below is page-body-only copy, so a missed tap
+# still fails loud (run #55's bug was asserting on the nav label instead).
 - tapOn:
     id: "bottom-nav-profile"
+    optional: true
+- tapOn:
+    text: "^Profile$"
+    optional: true
 - extendedWaitUntil:
     visible: "Personal Information|Sign Out|Account Settings"
     timeout: 20000
@@ -46,9 +51,14 @@ androidWebViewHierarchy: devtools
 # 4) Settings → Delete Account (Play Store account-deletion policy)
 - tapOn:
     id: "profile-settings"
+    optional: true
+- tapOn:
+    text: "^Settings$"
+    optional: true
 - extendedWaitUntil:
     visible: "Delete Account|Delete my account|Account Settings"
     timeout: 20000
+
 
 # 5) Hardware back → exit hint (regression guard for useAndroidBackButton)
 - pressKey: Back

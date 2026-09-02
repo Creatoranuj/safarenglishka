@@ -215,6 +215,17 @@ jobs:
             head -60 "$HOME/hierarchy-launch.txt" || true
             adb shell am force-stop com.safarenglishka.app || true
 
+            # Run #61 failed with "Element not found: Id matching regex: email"
+            # while every text matcher above it passed — i.e. the driver is not
+            # exposing DOM ids at all. diag-login.yaml parks the app on the
+            # Login screen so this dump captures the form's REAL node
+            # attributes; it never gates.
+            maestro test maestro/diag-login.yaml || true
+            maestro hierarchy > "$HOME/hierarchy-login.txt" 2>&1 || true
+            grep -iE "email|password|EditText|Sign In" "$HOME/hierarchy-login.txt" | head -40 || true
+            adb shell am force-stop com.safarenglishka.app || true
+
+
             # Gate 1: login. Fails loud and early when auth or the form breaks.
             # One retry: the emulator's gRPC driver dies mid-flow on shared
             # runners (run #56: DeviceServerDiedException on 'viewHierarchy',
@@ -250,6 +261,8 @@ jobs:
             maestro-nav.xml
             ~/host-mem.log
             ~/hierarchy-launch.txt
+            ~/hierarchy-login.txt
+
             ~/hierarchy-final.txt
             ~/.maestro/tests/**/*
           retention-days: 14
