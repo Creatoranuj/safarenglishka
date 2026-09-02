@@ -191,7 +191,7 @@ jobs:
 
           # NOTE: this runner executes the script under /usr/bin/sh (dash) and
           # each line in its own `sh -c`. Never use `set -o pipefail` (dash
-          # aborts on line 1)"never rely on `export` surviving to the next
+          # aborts on line 1)"never rely on `export` surviving to the next
           # line (run #51 proved it does not) — interpolate secrets inline.
           script: |
             set -e
