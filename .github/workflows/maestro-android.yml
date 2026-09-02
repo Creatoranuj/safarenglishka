@@ -128,9 +128,19 @@ jobs:
           # RAM raised to 4GB (runs #49/#50 died on system-wide ANR dialogs
           # with the landing page already painted behind them). Cores stay at
           # 2: ubuntu-latest only has 4, and handing the emulator all of them
-          # in run #54 starved the host until the emulator process itself
-          # vanished mid-flow ("device 'emulator-5554' not found").
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -camera-back none -memory 4096 -cores 2
+          # in run #54 starved the host.
+          #
+          # -gpu guest, NOT swiftshader_indirect. Run #59 instrumented the host
+          # and cleared the OOM theory: available memory never fell below
+          # 10.2 GB of 16 GB and `dmesg` listed no oom-kill, yet qemu still
+          # vanished ~95s in ("device 'emulator-5554' not found", then
+          # "could not connect to TCP port 5554: Connection refused"). With the
+          # host healthy, the crash is inside the emulator's own renderer:
+          # swiftshader_indirect translates guest GL on the host process, and
+          # the WebView's compositing right after login is what takes it down.
+          # -gpu guest keeps rasterisation inside the guest, so a renderer
+          # fault can no longer kill the emulator process.
+          emulator-options: -no-window -gpu guest -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -camera-back none -memory 4096 -cores 2
 
           script: |
             set -e
