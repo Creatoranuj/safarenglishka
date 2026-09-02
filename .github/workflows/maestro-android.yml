@@ -124,13 +124,18 @@ jobs:
             adb shell settings put global hide_error_dialogs 1
             adb shell settings put secure anr_show_background 0 || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            export MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}'
-            export MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}'
-
+            # DO NOT `export` here and reference $VAR below: this runner
+            # executes each script line as its own `/usr/bin/sh -c`, so exports
+            # never survive to the next line. Run #51's log proves it — the
+            # export lines ran, then `maestro test --env MAESTRO_EMAIL=""`
+            # submitted an empty form and the login screen answered "Please
+            # fill in all fields". Interpolate the secrets into the one command
+            # that needs them.
             # Smoke is the gate — it must fail the job when it fails. The
             # previous `|| echo "smoke failed"` swallowed real regressions and
             # let the job report green while login/dashboard were broken.
-            maestro test --env MAESTRO_EMAIL="$MAESTRO_EMAIL" --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" maestro/smoke.yaml --format junit --output maestro-report.xml
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml
+
             # Secondary flows stay non-blocking — they cover optional paths
             # (pdf viewer back-nav, cold-start deep link) that flake on cold
             # emulators but shouldn't gate release.
