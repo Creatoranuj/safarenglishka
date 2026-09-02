@@ -1,0 +1,134 @@
+name: Maestro Real Devices
+
+# Runs the SAME flows in `maestro/` on real hardware instead of a GitHub
+# emulator. Reason (runs #54-#65): the ubuntu-latest qemu process dies mid-flow
+# with "device 'emulator-5554' not found" -> "Android driver unreachable".
+# Run #65 proved the host is healthy; the emulator's own renderer takes the
+# process down. Real devices remove that failure mode entirely.
+#
+# Note on Firebase Test Lab: Test Lab runs Robo / Espresso / game-loop tests
+# only — it cannot execute Maestro YAML flows. Maestro Cloud (mobile.dev) is
+# the first-party real-device runner for these exact files, so it is what this
+# workflow uses.
+#
+# Required repo secrets:
+#   MAESTRO_CLOUD_API_KEY  - console.mobile.dev > Settings > API key
+#   MAESTRO_EMAIL / MAESTRO_PASSWORD - dedicated STUDENT test account
+#     (never an admin login: this job uploads screenshots and view hierarchies)
+#   VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_ANON_KEY
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: 'Fail the job when the flows fail'
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - 'maestro/**'
+      - 'src/**'
+      - 'android/**'
+      - '.github/workflows/maestro-cloud.yml'
+
+concurrency:
+  group: maestro-cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+
+jobs:
+  real-device-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: 🔐 Verify credentials are configured
+        env:
+          MAESTRO_CLOUD_API_KEY: ${{ secrets.MAESTRO_CLOUD_API_KEY }}
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        run: |
+          set -e
+          missing=""
+          [ -n "$MAESTRO_CLOUD_API_KEY" ] || missing="$missing MAESTRO_CLOUD_API_KEY"
+          [ -n "$MAESTRO_EMAIL" ] || missing="$missing MAESTRO_EMAIL"
+          [ -n "$MAESTRO_PASSWORD" ] || missing="$missing MAESTRO_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repo secret(s):$missing — add them in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "All credentials present."
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 📦 Install deps
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # Parse every flow before spending money on device minutes.
+      - name: ✅ Validate Maestro flows
+        run: |
+          set -e
+          for f in maestro/*.yaml maestro/split-smoke/*.yaml; do
+            bunx js-yaml "$f" > /dev/null && echo "ok  $f"
+          done
+
+      - name: 🏗️ Build web assets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        run: bunx cap sync android
+
+      # Real devices are arm64. The emulator workflow adds x86_64 for qemu;
+      # here the default arm ABIs are exactly what we want.
+      - name: 🏗️ Build debug APK
+        working-directory: android
+        env:
+          ANDROID_ABI_FILTERS: arm64-v8a,armeabi-v7a
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: ☁️ Run flows on real devices
+        uses: mobile-dev-inc/action-maestro-cloud@v1
+        with:
+          api-key: ${{ secrets.MAESTRO_CLOUD_API_KEY }}
+          app-file: android/app/build/outputs/apk/debug/app-debug.apk
+          workspace: maestro
+          # smoke.yaml composes login.yaml + nav.yaml via runFlow, so both
+          # gates share one session — same contract as the emulator job.
+          env: |
+            MAESTRO_EMAIL=${{ secrets.MAESTRO_EMAIL }}
+            MAESTRO_PASSWORD=${{ secrets.MAESTRO_PASSWORD }}
+          android-api-level: 33
+          # Manual runs can be advisory; pushes to main always gate.
+          fail-on-failure: ${{ github.event_name != 'workflow_dispatch' || inputs.gate }}
+
+      - name: 📤 Upload APK for triage (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: maestro-cloud-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: ignore
