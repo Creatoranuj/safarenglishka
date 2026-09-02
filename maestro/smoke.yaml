@@ -68,14 +68,17 @@ androidWebViewHierarchy: devtools
 # aborted the whole flow on API 33 with `Screenshot returned null`. The
 # `extendedWaitUntil` above already gates on real content, so animation
 # settling is implicit. Screenshot still captured for failure triage.
-# Tap the email INPUT, not its label. Run #47 proved the old sequence silently
-# skipped the field: both taps were `optional: true`, neither matched in the
-# WebView hierarchy, `inputText` went nowhere, and the flow submitted with an
-# empty email — the failure screenshot shows "Please fill in all fields" with
-# the password filled and the email box blank. The placeholder is the only
-# text Maestro reliably sees on the <input> node itself (Login.tsx:124).
+# Tap the email EditText, not its <label>. The screen hierarchy dumped from
+# runs #47/#48 shows TWO nodes carrying resource-id "email": first the label
+# (android.view.View, text "Email Address"), then the real
+# android.widget.EditText. A bare `id: "email"` tap hits the label, focuses
+# nothing, and `inputText` is swallowed - run #47's screenshot shows the form
+# submitted with "Please fill in all fields" and an empty email box. The
+# placeholder is not matchable either (it lives in hintText - run #48 failed
+# with "Element not found: you@example.com"). `index: 1` picks the EditText.
 - tapOn:
-    text: "you@example.com"
+    id: "email"
+    index: 1
 - inputText: ${MAESTRO_EMAIL}
 # Hard-fail here rather than 120s later on the dashboard assertion if the
 # field did not actually receive the text.
@@ -84,10 +87,10 @@ androidWebViewHierarchy: devtools
 # API 35 IME bug: hide keyboard between inputs so Maestro's next tap doesn't
 # race the soft-keyboard animation and deadlock the gRPC channel.
 - hideKeyboard
-# Same reasoning as the email field: target the input's placeholder
-# (Login.tsx:133), not the "Password" label.
+# Same duplicate-resource-id situation as the email field.
 - tapOn:
-    text: "••••••••"
+    id: "password"
+    index: 1
 
 - inputText: ${MAESTRO_PASSWORD}
 - hideKeyboard
