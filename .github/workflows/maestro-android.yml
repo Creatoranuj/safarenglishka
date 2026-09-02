@@ -226,16 +226,26 @@ jobs:
             adb shell am force-stop com.safarenglishka.app || true
 
 
-            # Gate 1: login. Fails loud and early when auth or the form breaks.
+            # Single gate, single Maestro session: smoke.yaml composes
+            # login.yaml + nav.yaml with runFlow. Run #62 ran them as two
+            # separate `maestro test` processes — login passed (55s) and nav
+            # then failed in 2s with no reason, because the second process does
+            # not inherit the first one's app/session state. runFlow keeps both
+            # gates in one session while junit still reports them separately.
+            #
             # One retry: the emulator's gRPC driver dies mid-flow on shared
-            # runners (run #56: DeviceServerDiedException on 'viewHierarchy',
-            # UNAVAILABLE after 38s of silence). That is infrastructure, not a
-            # product regression, and a second attempt on the same booted
-            # emulator clears it. A real failure still fails twice and gates.
-            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/login.yaml --format junit --output maestro-login.xml || maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/login.yaml --format junit --output maestro-login.xml
+            # runners (run #56: DeviceServerDiedException on 'viewHierarchy').
+            # That is infrastructure, not a product regression. A real failure
+            # still fails twice and gates.
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml \
+              || { echo '--- junit (attempt 1) ---'; cat maestro-report.xml || true; \
+                   adb shell am force-stop com.safarenglishka.app || true; \
+                   maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml; }
 
-            # Gate 2: navigation, on the session login.yaml just created.
-            maestro test maestro/nav.yaml --format junit --output maestro-nav.xml || maestro test maestro/nav.yaml --format junit --output maestro-nav.xml
+            # Always surface the junit body inline — run #62's "[Failed] nav
+            # (2s)" printed no reason at all; the XML carries the real message.
+            echo '--- junit (final) ---'
+            cat maestro-report.xml || true
 
             # Post-failure/success hierarchy snapshot for the artifact.
             maestro hierarchy > "$HOME/hierarchy-final.txt" 2>&1 || true
@@ -257,8 +267,7 @@ jobs:
         with:
           name: maestro-report
           path: |
-            maestro-login.xml
-            maestro-nav.xml
+            maestro-report.xml
             ~/host-mem.log
             ~/hierarchy-launch.txt
             ~/hierarchy-login.txt
