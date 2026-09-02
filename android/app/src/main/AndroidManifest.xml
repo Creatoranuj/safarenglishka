@@ -43,6 +43,15 @@
         <package android:name="com.whatsapp" />
         <package android:name="com.freecharge.android" />
         <package android:name="com.mobikwik_new" />
+        <!-- Bank-issued UPI apps: without these the Razorpay UPI-intent tab
+             silently hides them on Android 11+ package-visibility devices. -->
+        <package android:name="com.csam.icici.bank.imobile" />
+        <package android:name="com.snapwork.hdfc" />
+        <package android:name="com.sbi.upi" />
+        <package android:name="com.sbi.lotusintouch" />
+        <package android:name="com.axis.mobile" />
+        <package android:name="com.msf.kbank.mobile" />
+        <package android:name="com.bankofbaroda.upi" />
     </queries>
 
 
