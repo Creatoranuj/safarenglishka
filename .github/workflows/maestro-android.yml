@@ -120,7 +120,7 @@ jobs:
           # 2: ubuntu-latest only has 4, and handing the emulator all of them
           # in run #54 starved the host until the emulator process itself
           # vanished mid-flow ("device 'emulator-5554' not found").
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -cores 2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -camera-back none -memory 4096 -cores 2
 
           script: |
             set -e
