@@ -119,10 +119,15 @@ androidWebViewHierarchy: devtools
 - tapOn:
     text: "Sign In"
     optional: true
-- extendedWaitUntil:
-    visible: "Signing in|Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
-    timeout: 15000
-    optional: true
+# Runs #56 and #57 both died right here with
+# "DeviceServerDiedException: Device server died during 'viewHierarchy'"
+# (~40s of gRPC silence, ~92s connection age). Cause: the dashboard mounts its
+# whole tree in one frame, and polling the view hierarchy against that busy
+# WebView starves the driver's channel until it is declared UNAVAILABLE.
+# waitForAnimationToEnd is screenshot-based, so it lets the first paint settle
+# WITHOUT asking for a hierarchy. Do not replace it with extendedWaitUntil.
+- waitForAnimationToEnd:
+    timeout: 12000
 # Post-login dashboard render. Tokens verified against src/pages/Dashboard.tsx.
 # Regex WIDENED for API 35: also accepts bottom-nav labels + generic post-auth
 # tokens so we don't false-fail if the header copy shifted.
