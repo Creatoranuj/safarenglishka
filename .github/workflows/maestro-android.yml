@@ -206,24 +206,20 @@ jobs:
             # just before the "device not found" error.
             (while true; do echo "$(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3" avail="$7}')"; sleep 5; done) > "$HOME/host-mem.log" 2>&1 &
 
-            # Evidence BEFORE assertions. Runs #47/#48 both burned a full cycle
-            # guessing at the login form's node structure; this dump is uploaded
-            # unconditionally so the next triage reads it instead of guessing.
-            adb shell monkey -p com.safarenglishka.app -c android.intent.category.LAUNCHER 1 || true
-            sleep 25
-            maestro hierarchy > "$HOME/hierarchy-launch.txt" 2>&1 || true
-            head -60 "$HOME/hierarchy-launch.txt" || true
-            adb shell am force-stop com.safarenglishka.app || true
+            # NO diagnostic app launches before the gate. Run #64 spent ~3
+            # extra minutes launching the app twice just to dump hierarchies,
+            # and qemu then died 95s into the real flow ("device 'emulator-5554'
+            # not found" → "Android driver unreachable"), exactly like runs
+            # #54/#58/#59. Every extra WebView launch is another chance for the
+            # emulator's renderer to take the process down, so the gate now runs
+            # on a cold, otherwise-untouched emulator.
+            #
+            # The dump those steps existed for is already captured in run #64's
+            # log and encoded in maestro/login.yaml: the login inputs DO expose
+            # resource-id "email"/"password" and hintText
+            # "Email Address you@example.com" / "Password ••••••••".
+            # hierarchy-final.txt below still runs after the gate for triage.
 
-            # Run #61 failed with "Element not found: Id matching regex: email"
-            # while every text matcher above it passed — i.e. the driver is not
-            # exposing DOM ids at all. diag-login.yaml parks the app on the
-            # Login screen so this dump captures the form's REAL node
-            # attributes; it never gates.
-            maestro test maestro/diag-login.yaml || true
-            maestro hierarchy > "$HOME/hierarchy-login.txt" 2>&1 || true
-            grep -iE "email|password|EditText|Sign In" "$HOME/hierarchy-login.txt" | head -40 || true
-            adb shell am force-stop com.safarenglishka.app || true
 
 
             # Single gate, single Maestro session: smoke.yaml composes
@@ -267,10 +263,8 @@ jobs:
           path: |
             maestro-report.xml
             ~/host-mem.log
-            ~/hierarchy-launch.txt
-            ~/hierarchy-login.txt
-
             ~/hierarchy-final.txt
+
             ~/.maestro/tests/**/*
           retention-days: 14
           if-no-files-found: ignore
@@ -283,8 +277,8 @@ jobs:
           sudo dmesg -T 2>/dev/null | grep -iE "killed process|out of memory|oom-kill" | tail -20 || echo "none"
           echo "--- host memory samples ---"
           tail -40 "$HOME/host-mem.log" 2>/dev/null || echo "no samples"
-          echo "--- launch hierarchy (first 80 lines) ---"
-          head -80 "$HOME/hierarchy-launch.txt" 2>/dev/null || echo "no hierarchy dump"
+          echo "--- final hierarchy (first 80 lines) ---"
+          head -80 "$HOME/hierarchy-final.txt" 2>/dev/null || echo "no hierarchy dump"
 
       # On any failure (typically a pre-Maestro gradle compile error, as in
       # run #1), grab gradle's build reports + logs so the next triage pass
