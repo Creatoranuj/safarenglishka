@@ -692,8 +692,8 @@ jobs:
             --no-daemon --no-configuration-cache --no-watch-fs \
             --parallel --max-workers=4 --build-cache \
             --stacktrace 2>&1 \
-
             | tee "$RAW_LOG" \
+
             | grep --line-buffered -vE '^Note: (Some input files|Recompile with|/home/runner/.*(uses unchecked|uses or overrides))'
           STATUS=${PIPESTATUS[0]}
           kill "$HEARTBEAT_PID" 2>/dev/null || true
