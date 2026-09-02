@@ -68,22 +68,27 @@ androidWebViewHierarchy: devtools
 # aborted the whole flow on API 33 with `Screenshot returned null`. The
 # `extendedWaitUntil` above already gates on real content, so animation
 # settling is implicit. Screenshot still captured for failure triage.
+# Tap the email INPUT, not its label. Run #47 proved the old sequence silently
+# skipped the field: both taps were `optional: true`, neither matched in the
+# WebView hierarchy, `inputText` went nowhere, and the flow submitted with an
+# empty email — the failure screenshot shows "Please fill in all fields" with
+# the password filled and the email box blank. The placeholder is the only
+# text Maestro reliably sees on the <input> node itself (Login.tsx:124).
 - tapOn:
-    id: "email"
-    optional: true
-- tapOn:
-    text: "Email Address"
-    optional: true
+    text: "you@example.com"
 - inputText: ${MAESTRO_EMAIL}
+# Hard-fail here rather than 120s later on the dashboard assertion if the
+# field did not actually receive the text.
+- assertVisible: ${MAESTRO_EMAIL}
+
 # API 35 IME bug: hide keyboard between inputs so Maestro's next tap doesn't
 # race the soft-keyboard animation and deadlock the gRPC channel.
 - hideKeyboard
+# Same reasoning as the email field: target the input's placeholder
+# (Login.tsx:133), not the "Password" label.
 - tapOn:
-    id: "password"
-    optional: true
-- tapOn:
-    text: "Password"
-    optional: true
+    text: "••••••••"
+
 - inputText: ${MAESTRO_PASSWORD}
 - hideKeyboard
 
