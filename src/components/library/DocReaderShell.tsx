@@ -59,6 +59,24 @@ export default function DocReaderShell({
   url, title, filename, onBack, hideDownload, onDownloaded, itemId, source = "other", onOpenLink,
 }: Props) {
   const [headerVisible, setHeaderVisible] = useState(true);
+  /**
+   * Translating the hidden header is not enough inside the pseudo-landscape
+   * rotation frame: the translate runs along the ROTATED y-axis, which points
+   * along the physical screen edge, so a slice of the bar stayed painted in the
+   * physical top-left corner ("the chip that will not go away", most visible on
+   * offline PDFs opened from Saved / My Library). Once the hide transition has
+   * finished we take the header out of the layer tree entirely — nothing left
+   * to leak. Re-mounted synchronously when the chrome comes back.
+   */
+  const [headerRetired, setHeaderRetired] = useState(false);
+  useEffect(() => {
+    if (headerVisible) {
+      setHeaderRetired(false);
+      return;
+    }
+    const t = window.setTimeout(() => setHeaderRetired(true), 320);
+    return () => window.clearTimeout(t);
+  }, [headerVisible]);
   const [saving, setSaving] = useState(false);
   const [downloadPercent, setDownloadPercent] = useState<number>(0);
   const [savingLibrary, setSavingLibrary] = useState(false);
@@ -530,7 +548,7 @@ export default function DocReaderShell({
       {/* Center column — this is also the pseudo-landscape rotation frame, so
           header, PDF surface, FABs and the page chip all rotate together. */}
       <div
-        className="relative flex min-w-0 flex-1 flex-col"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
         style={rotationFrameStyle(pseudoLandscape)}
         {...(pseudoLandscape ? { [ROTATION_FRAME_ATTR]: "true" } : {})}
         onClick={handleSurfaceTap}
@@ -538,6 +556,7 @@ export default function DocReaderShell({
 
         <header
           ref={setHeaderEl}
+          data-testid="reader-header"
           // z-50 keeps the toolbar above the save-progress overlay (z-40) and
           // every viewer overlay, so its controls never go dead mid-download.
           // When hidden we ALSO fade + `invisible` it: on Android WebViews the
@@ -552,12 +571,18 @@ export default function DocReaderShell({
           // inside the rotated frame Android WebViews rounded it down enough to
           // leave a hairline of the bar painted along the top edge. Move it by
           // its measured height PLUS the status-bar inset and a few extra px so
-          // it is provably off-frame on every device.
+          // it is provably off-frame on every device — and once the transition
+          // has run, drop it out of the layer tree with `display:none` so a
+          // rotated frame cannot leak a slice of it into the physical corner.
           style={
             headerVisible
               ? undefined
-              : { transform: `translateY(calc(-${headerHeight + 8}px - env(safe-area-inset-top, 0px)))` }
+              : {
+                  transform: `translateY(calc(-${headerHeight + 8}px - env(safe-area-inset-top, 0px)))`,
+                  ...(headerRetired ? { display: "none" as const } : {}),
+                }
           }
+
           aria-hidden={!headerVisible}
 
           onClick={(e) => e.stopPropagation()}

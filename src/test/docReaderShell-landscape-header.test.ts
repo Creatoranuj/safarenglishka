@@ -41,3 +41,16 @@ describe("DocReaderShell landscape header", () => {
     expect(src).toContain('"opacity-0 invisible pointer-events-none"');
   });
 });
+
+describe("DocReaderShell hidden header cannot leak out of the rotation frame", () => {
+  it("retires the header from the layer tree after the hide transition", () => {
+    expect(src).toContain("const [headerRetired, setHeaderRetired] = useState(false)");
+    expect(src).toContain('headerRetired ? { display: "none" as const } : {}');
+  });
+
+  it("clips the pseudo-landscape rotation frame", () => {
+    expect(src).toContain(
+      'className="relative flex min-w-0 flex-1 flex-col overflow-hidden"',
+    );
+  });
+});
