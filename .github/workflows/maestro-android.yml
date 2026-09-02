@@ -237,13 +237,11 @@ jobs:
             # runners (run #56: DeviceServerDiedException on 'viewHierarchy').
             # That is infrastructure, not a product regression. A real failure
             # still fails twice and gates.
-            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml \
-              || { echo '--- junit (attempt 1) ---'; cat maestro-report.xml || true; \
-                   adb shell am force-stop com.safarenglishka.app || true; \
-                   maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml; }
+            # ONE LINE. android-emulator-runner executes every script line as
+            # its own `sh -c`, so backslash continuations are split apart and
+            # die instantly (run #63 failed in 1.4s on exactly that).
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml || { echo '--- junit (attempt 1) ---'; cat maestro-report.xml || true; adb shell am force-stop com.safarenglishka.app || true; maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml; }
 
-            # Always surface the junit body inline — run #62's "[Failed] nav
-            # (2s)" printed no reason at all; the XML carries the real message.
             echo '--- junit (final) ---'
             cat maestro-report.xml || true
 
