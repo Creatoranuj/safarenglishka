@@ -149,7 +149,12 @@ jobs:
             # Smoke is the gate — it must fail the job when it fails. The
             # previous `|| echo "smoke failed"` swallowed real regressions and
             # let the job report green while login/dashboard were broken.
-            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml
+            # One retry: the emulator's gRPC driver dies mid-flow on shared
+            # runners (run #56: DeviceServerDiedException on 'viewHierarchy',
+            # UNAVAILABLE after 38s of silence). That is infrastructure, not a
+            # product regression, and a second attempt on the same booted
+            # emulator clears it. A real failure still fails twice and gates.
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml || maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml
 
             # Secondary flows stay non-blocking — they cover optional paths
             # (pdf viewer back-nav, cold-start deep link) that flake on cold
