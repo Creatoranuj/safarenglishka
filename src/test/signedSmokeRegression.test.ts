@@ -5,23 +5,46 @@ import { resolve } from "node:path";
 describe("signed APK smoke regression guards", () => {
   const root = resolve(__dirname, "../..");
 
-  it("asserts profile identity without the masked email or the bare nav label", () => {
+  it("keeps smoke.yaml a thin composition over the split gates", () => {
     const smoke = readFileSync(resolve(root, "maestro/smoke.yaml"), "utf8");
+    // A failure must name its own class in the job log: login vs navigation.
+    expect(smoke).toContain("runFlow: login.yaml");
+    expect(smoke).toContain("runFlow: nav.yaml");
+  });
+
+  it("asserts profile identity without the masked email or the bare nav label", () => {
+    const nav = readFileSync(resolve(root, "maestro/nav.yaml"), "utf8");
+    const login = readFileSync(resolve(root, "maestro/login.yaml"), "utf8");
     // The email is a masked secret in CI, so asserting it can never match.
-    expect(smoke).not.toContain("visible: ${MAESTRO_EMAIL}");
+    expect(login).not.toContain("visible: ${MAESTRO_EMAIL}");
+    expect(nav).not.toContain("visible: ${MAESTRO_EMAIL}");
     // "Profile" alone is the bottom-nav label and stays visible even when the
     // tab never opened, so the assertion must be built from page-body copy.
-    expect(smoke).toContain('visible: "Personal Information|Sign Out|Account Settings"');
+    expect(nav).toContain('visible: "Personal Information|Sign Out|Account Settings"');
+    // The profile tap must stay non-optional (run #55 silently skipped it).
+    expect(nav).toContain('id: "bottom-nav-profile"');
+    expect(nav).not.toMatch(/id: "bottom-nav-profile"\n\s+optional: true/);
+  });
+
+  it("fails fast when the login form was submitted empty", () => {
+    const login = readFileSync(resolve(root, "maestro/login.yaml"), "utf8");
+    // Runs #47/#48 typed into the <label> that shares id "email" with the
+    // input, submitted a blank form, and only failed 120s later on a dashboard
+    // token. index: 1 selects the real input; the guard fails in ~2s instead.
+    expect(login).toContain('id: "email"');
+    expect(login).toContain("index: 1");
+    expect(login).toContain('text: "Please fill in all fields"');
   });
 
   it("lets the post-login frame settle without polling the view hierarchy", () => {
-    const smoke = readFileSync(resolve(root, "maestro/smoke.yaml"), "utf8");
+    const login = readFileSync(resolve(root, "maestro/login.yaml"), "utf8");
     // Runs #56/#57 died with DeviceServerDiedException while polling
     // viewHierarchy against the still-rendering dashboard. waitForAnimationToEnd
     // is screenshot-based and must stay the first step after Sign In.
-    expect(smoke).toContain("waitForAnimationToEnd");
-    expect(smoke).not.toContain('visible: "Signing in|');
+    expect(login).toContain("waitForAnimationToEnd");
+    expect(login).not.toContain('visible: "Signing in|');
   });
+
 
 
   it("exposes deterministic bottom-nav ids for Maestro", () => {

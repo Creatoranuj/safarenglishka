@@ -1,0 +1,95 @@
+# Maestro login gate — the smallest flow that proves auth works.
+#
+# Why this exists: for 10+ runs the smoke flow failed somewhere in the login
+# form and every failure looked identical from the outside ("dashboard token
+# not visible"). Splitting login into its own gate makes the failure class
+# obvious in one line of the job log: if login.yaml is red the problem is
+# auth/UI, if it is green the problem is downstream.
+#
+# Run locally:
+#   maestro test maestro/login.yaml --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=...
+# NEVER hardcode credentials here — this file is committed.
+appId: com.safarenglishka.app
+# DOM traversal instead of the Android accessibility tree. The app is a
+# Capacitor WebView: the a11y tree only exposes an empty `viewIdResName: root`
+# node, so text matchers fall through to the screenshot fallback, which returns
+# null on API 33 google_atd (SurfaceFlinger "FB is protected: PERMISSION_DENIED")
+# and kills the gRPC driver. devtools mode needs CAP_DEBUG=1 / a debug build.
+androidWebViewHierarchy: devtools
+---
+- launchApp:
+    clearState: true
+
+# First paint. API 28/33 x86_64 cold WebView parse on a shared runner can take
+# minutes, so this is generous and optional — the hard assertion is next.
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    timeout: 240000
+    optional: true
+
+# Runs #49/#50: a system ANR dialog covers the WebView and makes every text
+# assertion false even though the page painted. Tapping "Wait" is a no-op when
+# no dialog is present.
+- tapOn:
+    text: "Wait"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    timeout: 120000
+
+- tapOn:
+    text: "Login|Sign In|Log In|Get Started"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Welcome Back|Email Address|Email"
+    timeout: 60000
+
+# Duplicate resource ids: the label (<label for="email">) and the real
+# <input id="email"> BOTH surface as id "email" (runs #47/#48 typed into the
+# label and submitted an empty form). index: 1 selects the input.
+- tapOn:
+    id: "email"
+    index: 1
+- inputText: ${MAESTRO_EMAIL}
+# API 35 IME bug: hide the keyboard between fields so the next tap does not
+# race the soft-keyboard animation and deadlock the gRPC channel (run #52).
+- hideKeyboard
+
+- tapOn:
+    id: "password"
+    index: 1
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+
+- scrollUntilVisible:
+    element:
+      id: "login-submit"
+    direction: DOWN
+    timeout: 10000
+    optional: true
+- tapOn:
+    id: "login-submit"
+    optional: true
+- tapOn:
+    text: "Sign In"
+    optional: true
+
+# Empty-field guard. If inputText landed on the label instead of the input the
+# form answers "Please fill in all fields" immediately — fail here (2s) instead
+# of 120s later on a dashboard token, which is what made triage so slow.
+- assertNotVisible:
+    text: "Please fill in all fields"
+- assertNotVisible:
+    text: "Invalid login credentials"
+
+# Screenshot-based settle. Do NOT replace with extendedWaitUntil: runs #56/#57
+# died polling viewHierarchy against the dashboard's single-frame mount
+# (DeviceServerDiedException).
+- waitForAnimationToEnd:
+    timeout: 12000
+
+- extendedWaitUntil:
+    visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 120000

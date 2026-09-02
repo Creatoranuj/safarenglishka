@@ -48,6 +48,7 @@ const BottomNav = () => {
       <button
         key={path}
         id={id}
+        data-testid={id}
         onClick={() => go(path)}
         aria-current={active ? "page" : undefined}
         aria-label={label}

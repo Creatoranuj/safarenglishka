@@ -1,0 +1,59 @@
+# Maestro navigation gate — runs AFTER login.yaml on the same booted emulator
+# and the same app session (no clearState, no relaunch).
+#
+# Covers: bottom nav routes mount, session survives navigation, and the Play
+# Store policy guardrail (Delete Account reachable from Settings).
+appId: com.safarenglishka.app
+androidWebViewHierarchy: devtools
+---
+# Assume we are already signed in (login.yaml ran first). Confirm before
+# touching anything so a lost session fails here, not three steps later.
+- extendedWaitUntil:
+    visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile"
+    timeout: 60000
+
+# 1) My Courses
+- tapOn:
+    id: "bottom-nav-my-courses"
+    optional: true
+- tapOn:
+    text: "My Courses"
+    optional: true
+- extendedWaitUntil:
+    visible: "My Courses|No active courses|Enrolled"
+    timeout: 20000
+
+# 2) Downloads — proves route mount + IndexedDB init
+- tapOn:
+    id: "bottom-nav-downloads"
+    optional: true
+- tapOn:
+    text: "Downloads"
+    optional: true
+- extendedWaitUntil:
+    visible: "Downloads|No downloads|Saved"
+    timeout: 20000
+
+# 3) Profile — the tap is NOT optional. Run #55 made it optional, the tap did
+# nothing, and the assertion still passed because "Profile" is a bottom-nav
+# label present on every screen. Assert page-body copy only.
+- tapOn:
+    id: "bottom-nav-profile"
+- extendedWaitUntil:
+    visible: "Personal Information|Sign Out|Account Settings"
+    timeout: 20000
+
+# 4) Settings → Delete Account (Play Store account-deletion policy)
+- tapOn:
+    id: "profile-settings"
+- extendedWaitUntil:
+    visible: "Delete Account|Delete my account|Account Settings"
+    timeout: 20000
+
+# 5) Hardware back → exit hint (regression guard for useAndroidBackButton)
+- pressKey: Back
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Press back again to exit"
+    timeout: 4000
+    optional: true

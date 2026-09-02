@@ -234,7 +234,7 @@ const Profile = () => {
         </div>
 
 
-        <Button id="profile-settings" onClick={() => navigate("/settings")} variant="outline" className="w-full gap-2">
+        <Button id="profile-settings" data-testid="profile-settings" onClick={() => navigate("/settings")} variant="outline" className="w-full gap-2">
           <SettingsIcon className="h-5 w-5" /> Settings
         </Button>
 
