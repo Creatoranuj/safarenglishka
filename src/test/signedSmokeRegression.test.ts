@@ -5,11 +5,24 @@ import { resolve } from "node:path";
 describe("signed APK smoke regression guards", () => {
   const root = resolve(__dirname, "../..");
 
-  it("does not assert masked MAESTRO_EMAIL visibility in smoke.yaml", () => {
+  it("asserts profile identity without the masked email or the bare nav label", () => {
     const smoke = readFileSync(resolve(root, "maestro/smoke.yaml"), "utf8");
+    // The email is a masked secret in CI, so asserting it can never match.
     expect(smoke).not.toContain("visible: ${MAESTRO_EMAIL}");
-    expect(smoke).toContain('visible: "Profile|Personal Information|Email|Sign Out"');
+    // "Profile" alone is the bottom-nav label and stays visible even when the
+    // tab never opened, so the assertion must be built from page-body copy.
+    expect(smoke).toContain('visible: "Personal Information|Sign Out|Account Settings"');
   });
+
+  it("lets the post-login frame settle without polling the view hierarchy", () => {
+    const smoke = readFileSync(resolve(root, "maestro/smoke.yaml"), "utf8");
+    // Runs #56/#57 died with DeviceServerDiedException while polling
+    // viewHierarchy against the still-rendering dashboard. waitForAnimationToEnd
+    // is screenshot-based and must stay the first step after Sign In.
+    expect(smoke).toContain("waitForAnimationToEnd");
+    expect(smoke).not.toContain('visible: "Signing in|');
+  });
+
 
   it("exposes deterministic bottom-nav ids for Maestro", () => {
     const bottomNav = readFileSync(resolve(root, "src/components/Layout/BottomNav.tsx"), "utf8");

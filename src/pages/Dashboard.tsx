@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { mark, measure } from "@/lib/perf/marks";
 import { safeGet, safeSet } from "@/lib/storage";
 import { useNavigate } from "react-router-dom";
@@ -10,6 +10,7 @@ import Sidebar from "../components/Layout/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
+import { Skeleton } from "../components/ui/skeleton";
 import { Badge } from "../components/ui/badge";
 import { 
   PlayCircle, Zap, 
@@ -20,8 +21,13 @@ import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import appLogo from "../assets/branding/nb-mark.webp";
 import BatchSelector from "../components/dashboard/BatchSelector";
 import { useBatch } from "../contexts/BatchContext";
-import HeroCarousel from "../components/dashboard/HeroCarousel";
-import UpcomingSchedule from "../components/dashboard/UpcomingSchedule";
+// PERF: these three mount charts, carousels and their own queries. Loading
+// them eagerly put the whole dashboard tree in a single post-login frame,
+// which starved the Maestro driver's gRPC channel (runs #56/#57 died with
+// DeviceServerDiedException) and hitched first paint on low-end Android.
+// Deferring them keeps the first frame to the header + course card.
+const HeroCarousel = lazy(() => import("../components/dashboard/HeroCarousel"));
+const UpcomingSchedule = lazy(() => import("../components/dashboard/UpcomingSchedule"));
 import LiveBadge from "../components/live/LiveBadge";
 import { SmartImage } from "../components/common/SmartImage";
 import coursePlaceholder from "../assets/thumbnails/pdf-default.svg";
@@ -32,7 +38,7 @@ import doubtsIconAsset from "../assets/icons/doubts-3d.webp";
 import libraryIconAsset from "../assets/icons/library-3d.webp";
 import bellIconAsset from "../assets/icons/bell-3d.webp";
 import performanceIconAsset from "../assets/icons/performance-3d.webp";
-import UpcomingLiveSessions from "../components/live/UpcomingLiveSessions";
+const UpcomingLiveSessions = lazy(() => import("../components/live/UpcomingLiveSessions"));
 import { Video } from "lucide-react";
 
 const cubeIcon = cubeIconAsset;
@@ -346,10 +352,14 @@ const Dashboard = () => {
               </div>
             )}
           <BatchSelector />
-          <HeroCarousel />
+          <Suspense fallback={<Skeleton className="h-40 w-full rounded-xl" />}>
+            <HeroCarousel />
+          </Suspense>
           <LiveBadge />
+          <Suspense fallback={<Skeleton className="h-24 w-full rounded-xl" />}>
             <UpcomingLiveSessions />
             <UpcomingSchedule />
+          </Suspense>
             {activeCourse ? (
               <Card
                 className="overflow-hidden shadow-sm cursor-pointer group hover:shadow-md transition-shadow"
