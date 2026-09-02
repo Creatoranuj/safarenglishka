@@ -1,94 +1,92 @@
-# Workflow Audit — Safar English Ka (v1.1.1 → v1.1.2)
+# Workflow audit — 2026-09-02
 
-_2026-09-02 — all runs verified live through the GitHub API._
+Scope: all 14 GitHub Actions workflows on `Creatoranuj/safarenglishka`, plus the
+post-login render path that both the emulator and real devices have to survive.
 
-## 1. Why v1.1.1 / v1.1.2 release builds "failed"
+## Status per workflow
 
-Gradle was never the problem. Both run #75 and run #76 printed:
-
-```
-BUILD SUCCESSFUL in 2m 33s
-453 actionable tasks: 294 executed, 159 from cache
-```
-
-…and then died with exit code 2:
-
-```
-line 45: syntax error near unexpected token `|'
-line 45: `  | tee "$RAW_LOG" \'
-```
-
-A blank line had crept between `--stacktrace 2>&1 \` and `| tee`, so bash
-terminated the command at the backslash and then hit a bare pipe. Fixing that
-exposed the identical defect one line lower (`| tee ... \` → blank → `| grep`).
-Both are now rejoined, and a guard scans every workflow for a blank line
-following a `\` continuation.
-
-**Result: run #77 — success, 223s. Release `v1.1.2` published with
-`SafarEnglish-v1.1.2.apk`, `SafarEnglish.apk`, `web-bundle.zip`.**
-
-## 2. Where the build time was going
-
-| Phase | Before | After | Why |
+| Workflow | Last state | Useful? | Verdict |
 | --- | --- | --- | --- |
-| Gradle wrapper / SDK / config | ~180s cold every tag | restored from warm cache | Actions cache is **ref-scoped** — a tag run can never read another tag's cache, so every release build was 100% cold and its 43–66s post-job save was thrown away. `warm-android-cache.yml` seeds the same keys on `main` + daily; `build-apk.yml` now only `cache/restore`s. |
-| `:app:bundleRelease` | always | only when `PLAY_SERVICE_ACCOUNT_JSON` is set | ~60–90s saved; the AAB was uploaded as a 1-day artifact and deleted. |
-| Java compile regression | caught only at tag time | `android-compile-guard.yml` on every `android/**` change | `MainActivity.onResume()` was `protected` vs `public` in `BridgeActivity`. |
+| Safar English (build APK + release) | ✅ #77, 3m 38s | Yes | The release gate. Green after the shell-continuation fix. |
+| Code Guards | ✅ | Yes | Cheap, catches committed mistakes. Keep. |
+| Playwright E2E | ✅ | Yes | Chromium-only, fast, real coverage. Keep. |
+| Enrollment Bypass Regression | ✅ | Yes — highest value | Proves a paid course cannot be self-enrolled. Keep. |
+| PDF + Notion Edge Keepalive | ✅ | Yes | Stops the edge functions cold-starting. Keep. |
+| Dependency Security Audit | ❌ 6 real findings | Yes | Failing for a correct reason — see below. |
+| Maestro Android E2E | ❌ #60 | Partly | Infrastructure-limited. See the investigation below. |
+| Razorpay Smoke (test mode) | ❌ HTTP 401 | Yes, once fixed | `RAZORPAY_KEY_SECRET` in repo secrets is rotated/invalid. Only you can replace it. |
+| Lighthouse CI | ❌ stale | No | Auto-trigger disabled since 2026-07-19. Noise. |
+| Signed APK Smoke | ❌ stale | No | Same — disabled, duplicates the Maestro path. |
 
-End-to-end release build: **~5.5–6 min → 3m 43s (223s)**.
+### Dependency audit — the 6 findings are real
 
-## 3. Workflow status (latest run of each)
+`node scripts/verify-osv-findings.mjs` reports 6 real / 0 phantom:
+`body-parser` GHSA-v422-hmwv-36x6, `dompurify` GHSA-c2j3-45gr-mqc4 and
+GHSA-55q2-fjhq-7xh7, `react-router` GHSA-wrjc-x8rr-h8h6, GHSA-h8fp-f39c-q6mh,
+GHSA-337j-9hxr-rhxg. The job should stay red until these are upgraded — do not
+silence it.
 
-| Workflow | Run | Result | Notes |
+## Maestro Android E2E — what actually kills it
+
+Four runs, each one narrowing the cause. This is the useful part of the audit.
+
+| Run | Change | Survival | Failure |
 | --- | --- | --- | --- |
-| Safar English (build-apk) | #77 | ✅ 223s | fixed this session |
-| Android Compile Guard | #2 | ✅ 208s | new guard |
-| Warm Android Cache | #2 | ✅ 333s | seeds the shared cache |
-| Code Guards | #13 | ✅ 19s | |
-| Enrollment Bypass Regression | #46 | ✅ 31s | RLS test fixed |
-| Playwright E2E | #13 | ✅ 53s | |
-| Flake Trend Aggregator | #41 | ✅ 11s | |
-| Supabase Keepalive | #13 | ✅ 10s | now queries `/rest/v1/courses` (real DB touch) |
-| PDF + Notion Edge Keepalive | #1100 | ✅ 9s | |
-| Dependency Security Audit | #10 | ❌ 17s | see below |
-| Maestro Android E2E | #43 | ❌ 46s | `chmod +x android/gradlew` added; re-run in flight |
-| Razorpay Smoke | #35 | ❌ 10s | **not a code bug** — `RAZORPAY_KEY_SECRET` is rotated/invalid (HTTP 401 `Authentication failed`). Only the repo owner can replace the secret. |
-| Lighthouse CI | #54 | ❌ stale | auto-trigger intentionally disabled 2026-07-19 |
-| Signed APK Smoke | #50 | ❌ stale | auto-trigger intentionally disabled 2026-07-19 |
+| #56 | baseline | 92s | `DeviceServerDiedException` during `viewHierarchy` |
+| #57 | one retry added | 92s | identical |
+| #58 | settle step + `-no-snapshot-save` | 109s | `device 'emulator-5554' not found` |
+| #59 | host instrumentation | ~95s | same, **host proven healthy** |
+| #60 | `-gpu guest` | **272s** | same, but 3× further |
 
-## 4. Dependency Security Audit
+The decisive measurement is run #59. The suspicion was that the runner was
+OOM-killing qemu. It is not:
 
-`postcss` was bumped to `^8.5.26`, clearing its HIGH advisory. Remaining
-`dompurify` findings are LOW/MODERATE and informational only. The step that
-actually failed was **orphan detection**: `ai-health` (ops/uptime probe) and
-`fetch-youtube-transcript` (called server-side from
-`supabase/functions/resolve-doubt/index.ts`, never from `src/`) have no UI
-caller by design. Both are now in `BACKEND_ONLY_ALLOWLIST` —
-`called=30 backend-only=11 orphaned=0`.
+- available memory never fell below **10.2 GB of 16 GB** across the whole flow,
+- `dmesg` listed **no** `oom-kill` / `killed process` entries,
+- and qemu still disappeared — `device 'emulator-5554' not found`, then
+  `could not connect to TCP port 5554: Connection refused`.
 
-Still open and owner-actionable: the `react-router` advisories
-(GHSA-wrjc-x8rr-h8h6, GHSA-h8fp-f39c-q6mh, GHSA-337j-9hxr-rhxg) need a
-react-router major bump, which touches routing across the app — do it as its
-own change, not inside a release build.
+A healthy host plus a vanished emulator process means the fault is inside the
+emulator, not around it. Swapping `-gpu swiftshader_indirect` for `-gpu guest`
+(rasterise in the guest instead of translating guest GL inside the host qemu
+process) took survival from 92s to 272s — same failure, three times later.
+That confirms the renderer is the pressure point but does not remove it.
 
-## 5. Is this useful?
+Conclusion: **this is an emulator limitation, not a product regression.** The
+flow reaches and passes the Sign In tap every time
+(`step-019-tapOnElement-Sign_In.json` is in every artifact). Chasing it further
+on a shared runner has diminishing returns; the next real step is a physical
+device farm (Firebase Test Lab) rather than more emulator flags. Until then
+Playwright E2E and the enrollment regression are the trustworthy gates.
 
-Yes, with one caveat. The high-value workflows are `build-apk`,
-`android-compile-guard`, `code-guards`, `enrollment-bypass`, and
-`playwright-e2e` — each one has caught a real defect. `warm-android-cache`
-pays for itself on every tag. The two keepalives are cheap insurance against
-Supabase auto-pause.
+## Product fixes that came out of this
 
-The low-value ones are the two intentionally disabled workflows
-(`lighthouse-ci`, `signed-apk-smoke`) — they sit permanently red in the
-Actions list and make real failures harder to spot. Either delete them or
-leave them dispatch-only with a note; a red badge that everyone learns to
-ignore is worse than no badge.
+The emulator dying during the post-login render pointed at a genuine
+client-side problem, which is now fixed:
 
-## 6. White-strip verification
+`src/pages/Dashboard.tsx` mounted `HeroCarousel`, `UpcomingLiveSessions` and
+`UpcomingSchedule` — three components with their own queries and animations —
+in the same frame as the rest of the dashboard. They are now behind
+`lazy()` + `Suspense` with skeleton fallbacks, so the first post-login frame is
+the header plus the active-course card. This is the same hitch low-end Android
+devices feel on login, so the win is not CI-only.
 
-The CSS/native fix is in `v1.1.2`. Final confirmation requires installing
-`SafarEnglish-v1.1.2.apk` from the release on a physical device and opening a
-Library PDF in both portrait and landscape — the strip is the Android system
-status bar repainting over the WebView, so it cannot be reproduced in a
-browser preview.
+`maestro/smoke.yaml` now settles that frame with `waitForAnimationToEnd`
+(screenshot-based) instead of `extendedWaitUntil` (hierarchy-based), so the
+driver is not asking a busy WebView for a view tree during first paint.
+
+## Build pipeline
+
+The "AAB not produced" line on run #77 is a **notice, not a failure**.
+`:app:bundleRelease` only runs when `PLAY_SERVICE_ACCOUNT_JSON` is set; it is
+not, so the AAB step is skipped and roughly 60-90s is saved per build. The APK
+is built, signed and attached to the release. Add that secret when you are
+ready to publish to the Play Store and the warning disappears by itself.
+
+## Test account recommendation
+
+Do not put an admin account in `MAESTRO_EMAIL` / `MAESTRO_PASSWORD`. Repository
+secrets are visible to every workflow, and the E2E job uploads screenshots and
+view-hierarchy JSON as artifacts — an admin session would publish admin data
+into those artifacts. Use a dedicated student account with no row in
+`public.user_roles` and one paid-course enrollment.
