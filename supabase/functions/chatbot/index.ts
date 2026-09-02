@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { requireUser } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { sanitizeAiField } from "../_shared/sanitize.ts";
-import { callAiGateway } from "../_shared/aiGateway.ts";
+import { callAiGateway, classifyGatewayFailure } from "../_shared/aiGateway.ts";
 
 // Redeployed 2026-07-22: pick up rotated LOVABLE_API_KEY.
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -263,6 +263,45 @@ async function fetchWebContext(query: string): Promise<string> {
   }
 }
 
+
+/**
+ * Best-effort answer when the model is unreachable. Uses context we already
+ * fetched (FAQ rows, RAG knowledge, course catalogue) so a dead AI key
+ * degrades the chatbot instead of breaking it.
+ */
+function buildDegradedAnswer(
+  message: string,
+  faqs: any[],
+  ragContext: string,
+  courses: any[],
+): string {
+  const msgLower = String(message || '').toLowerCase();
+  const words = msgLower.split(/\s+/).filter((w) => w.length > 3);
+  const parts: string[] = [];
+
+  const hits = (faqs || []).filter((f: any) =>
+    words.some((w) => String(f?.question || '').toLowerCase().includes(w))
+  ).slice(0, 2);
+  if (hits.length) {
+    parts.push(hits.map((f: any) => `**${f.question}**\n${f.answer}`).join('\n\n'));
+  }
+
+  if (!hits.length && ragContext) {
+    parts.push(`📚 **Notes se:**\n${String(ragContext).slice(0, 900)}`);
+  }
+
+  if (!parts.length && (courses || []).length) {
+    parts.push(
+      '📚 **Aapke liye available courses:**\n' +
+      courses.slice(0, 5).map((c: any) =>
+        `- **${c.title}** (Class ${c.grade || 'All'}) — ₹${c.price === 0 ? 'FREE' : c.price}`
+      ).join('\n')
+    );
+  }
+
+  return parts.join('\n\n');
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -353,8 +392,14 @@ Deno.serve(async (req) => {
     }
 
     if (!LOVABLE_API_KEY) {
+      const degraded = buildDegradedAnswer(message, faqs, ragContext, courses);
+      const head = "🔧 AI service configure nahi hai (admin ko LOVABLE_API_KEY set karni hogi).";
       return new Response(JSON.stringify({
-        response: "🔧 Main abhi connect nahi ho pa raha. Thodi der baad try karein."
+        response: degraded ? `${head}\n\n---\n\n${degraded}` : head,
+        code: "key_missing",
+        degraded: Boolean(degraded),
+        retryable: false,
+        needsAdmin: true,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -462,29 +507,38 @@ Deno.serve(async (req) => {
       timeoutMs: 30000,
     });
 
-    if (aiResponse.status === 429) {
-      return new Response(JSON.stringify({
-        response: "⏳ Bahut zyada requests aa rahi hain. Thodi der baad try karein. 🙏"
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-    if (aiResponse.status === 402) {
-      return new Response(JSON.stringify({
-        response: "🔧 AI Agent temporarily unavailable. Please contact support."
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    // One place, one decision: every non-OK gateway reply is classified into a
+    // stable code + honest copy (see _shared/aiGateway.ts). Previously a stale
+    // key, an empty credit balance and a 30s upstream blip all rendered the same
+    // "AI abhi busy hai" line, which made the outage undiagnosable from the app.
     if (!aiResponse.ok) {
       const upstream = await aiResponse.text().catch(() => '');
-      console.error(`AI gateway error ${aiResponse.status} model=${model}:`, upstream.slice(0, 500));
-      // Tightened: only the exact key-registry error should surface the
-      // "admin ko batayein" copy. Anything else (transient 4xx/5xx, model
-      // hiccup, provider error containing the word "unauthorized" in prose)
-      // now falls through to a neutral retry message.
-      if (upstream.includes('lovable_api_key_not_registered')) {
-        return new Response(JSON.stringify({
-          response: "⚠️ AI abhi busy hai, thodi der baad try karein. 🙏"
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const failure = classifyGatewayFailure(aiResponse.status, upstream);
+      console.error(
+        `AI gateway ${aiResponse.status} code=${failure.code} model=${model}:`,
+        upstream.slice(0, 500),
+      );
+
+      // Degrade, don't dead-end: FAQ / knowledge-base / course context is
+      // already loaded above, so answer from it instead of refusing outright.
+      const degraded = buildDegradedAnswer(message, faqs, ragContext, courses);
+      const body = {
+        response: degraded ? `${failure.message}\n\n---\n\n${degraded}` : failure.message,
+        code: failure.code,
+        degraded: Boolean(degraded),
+        retryable: failure.retryable,
+        needsAdmin: failure.needsAdmin,
+      };
+
+      if (userId) {
+        await supabase.from('chatbot_logs').insert({
+          user_id: userId, message, response: body.response, session_id: sessionId,
+        }).catch?.(() => {});
       }
-      throw new Error(`AI API error: ${aiResponse.status} ${upstream.slice(0, 200)}`);
+
+      return new Response(JSON.stringify(body), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const aiData = await aiResponse.json();
@@ -521,21 +575,26 @@ Deno.serve(async (req) => {
     console.error('Chatbot error:', error);
     const msg = (error as Error)?.message || "";
     let status = 500;
+    let code = "upstream_error";
     let response = "🔧 Connection mein problem hai. Thodi der baad try karein. 🙏";
     if (/rate.?limit|429/i.test(msg)) {
       status = 429;
+      code = "rate_limited";
       response = "⏳ Bahut zyada requests — thodi der ruk kar try karein.";
     } else if (/credit|402|payment_required/i.test(msg)) {
       status = 402;
+      code = "no_credits";
       response = "💳 AI credits khatam ho gaye hain. Admin ko batayein.";
     } else if (/gateway_timeout|timeout|504/i.test(msg)) {
       status = 504;
+      code = "timeout";
       response = "⏳ AI response slow ho gaya. Ek baar phir try karein. 🙏";
     } else if (/lovable_api_key|unauthor|401|403/i.test(msg)) {
       status = 503;
+      code = "key_unregistered";
       response = "🔧 AI service configure nahi hai. Admin ko batayein.";
     }
-    return new Response(JSON.stringify({ response, error: msg }), {
+    return new Response(JSON.stringify({ response, code, error: msg }), {
       status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

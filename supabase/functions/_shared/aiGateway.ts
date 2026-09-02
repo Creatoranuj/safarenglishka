@@ -72,3 +72,91 @@ export async function callAiGateway(opts: GatewayCallOpts): Promise<Response> {
 
   return last!;
 }
+
+/**
+ * Classify a non-OK AI gateway response into a stable machine code plus
+ * student-safe Hinglish copy.
+ *
+ * Why this exists: run after run, every gateway failure — stale key, no
+ * credits, rate limit, upstream 5xx — collapsed into the single line
+ * "AI abhi busy hai", so nobody could tell a 30-second blip from a key that
+ * has been dead for days. Each cause now gets its own code and its own copy.
+ */
+export type GatewayFailureCode =
+  | "key_missing"
+  | "key_unregistered"
+  | "no_credits"
+  | "rate_limited"
+  | "timeout"
+  | "bad_request"
+  | "upstream_error";
+
+export interface GatewayFailure {
+  code: GatewayFailureCode;
+  /** true when a later retry (by the user or a scheduled run) can succeed. */
+  retryable: boolean;
+  /** true when only an admin/owner can unblock it. */
+  needsAdmin: boolean;
+  message: string;
+}
+
+export function classifyGatewayFailure(status: number, bodyText = ""): GatewayFailure {
+  const text = String(bodyText || "");
+
+  if (status === 401 || status === 403) {
+    const unregistered =
+      text.includes("lovable_api_key_not_registered") ||
+      text.includes("registry_lookup_failed") ||
+      text.includes("unauthorized");
+    return {
+      code: unregistered ? "key_unregistered" : "key_missing",
+      retryable: false,
+      needsAdmin: true,
+      message:
+        "🔧 AI service abhi band hai (admin ko key dobara connect karni hogi). Tab tak main FAQ aur course notes se madad kar deta hoon. 🙏",
+    };
+  }
+
+  if (status === 402) {
+    return {
+      code: "no_credits",
+      retryable: false,
+      needsAdmin: true,
+      message: "💳 AI credits khatam ho gaye hain. Admin ko batayein — 5 minute me wapas aa jayega. 🙏",
+    };
+  }
+
+  if (status === 429) {
+    return {
+      code: "rate_limited",
+      retryable: true,
+      needsAdmin: false,
+      message: "⏳ Abhi bahut requests aa rahi hain. 30 second ruk kar phir poochein. 🙏",
+    };
+  }
+
+  if (status === 504 || text.includes("gateway_timeout")) {
+    return {
+      code: "timeout",
+      retryable: true,
+      needsAdmin: false,
+      message: "⏳ AI response slow ho gaya. Ek baar phir try karein. 🙏",
+    };
+  }
+
+  if (status === 400) {
+    return {
+      code: "bad_request",
+      retryable: false,
+      needsAdmin: true,
+      message: "🔧 AI request settings galat hain (model/limit). Admin ko batayein. 🙏",
+    };
+  }
+
+  return {
+    code: "upstream_error",
+    retryable: true,
+    needsAdmin: false,
+    message: "⚠️ AI se jawab nahi mila. Thodi der baad phir try karein. 🙏",
+  };
+}

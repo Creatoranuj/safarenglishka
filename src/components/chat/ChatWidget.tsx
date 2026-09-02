@@ -137,6 +137,10 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
   // Image/doc upload state
   const [uploadedFile, setUploadedFile] = useState<{ file: File; previewUrl: string; type: "image" | "pdf" } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // Non-null when the backend reports the AI service itself is down (stale key,
+  // no credits). Students otherwise saw only per-message failures and kept
+  // retrying a service that could not answer.
+  const [serviceNotice, setServiceNotice] = useState<string | null>(null);
 
   // Check voice support
   useEffect(() => {
@@ -346,6 +350,18 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
         throw new Error(error.message || "Chatbot request failed");
       }
       const botReply = data?.response || "माफ़ करें, कुछ गड़बड़ हो गई। फिर try करें। 🙏";
+      // The edge function now reports *why* it failed (key_unregistered,
+      // no_credits, rate_limited...). Surface an admin-actionable banner once
+      // instead of letting every message fail identically.
+      if (data?.needsAdmin) {
+        setServiceNotice(
+          data.code === "no_credits"
+            ? "💳 AI credits khatam — admin ko batayein. Tab tak FAQ/notes se jawab mil raha hai."
+            : "🔧 AI service abhi band hai — admin ko batayein. Tab tak FAQ/notes se jawab mil raha hai.",
+        );
+      } else if (data?.code == null) {
+        setServiceNotice(null);
+      }
 
       setMessages(prev => [...prev, {
         role: "assistant",
@@ -561,6 +577,14 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 md:p-5" ref={scrollRef}>
             <div className="space-y-4 pb-2">
+              {serviceNotice && (
+                <div
+                  role="status"
+                  className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-foreground/80"
+                >
+                  {serviceNotice}
+                </div>
+              )}
               {/* Date divider — target style */}
               {messages.length > 0 && (
                 <div className="text-center text-xs text-muted-foreground/70 py-1">
