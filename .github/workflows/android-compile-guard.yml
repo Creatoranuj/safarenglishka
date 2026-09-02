@@ -1,0 +1,70 @@
+name: Android Compile Guard
+
+# WHY: the v1.1.1 release build failed at :app:compileReleaseJavaWithJavac
+# with "attempting to assign weaker access privileges; was public" — a
+# one-line Java visibility mistake in MainActivity.java that nothing caught
+# until a tag was already pushed. This job compiles the native sources on
+# every android/** change so that class of failure is found on `main`, not
+# during a release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - '.github/workflows/android-compile-guard.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: "-Xmx4g -Dorg.gradle.workers.max=4 -Dorg.gradle.daemon=false"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: android-compile-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - name: 📦 Install dependencies (bun)
+        run: bun install --frozen-lockfile --no-progress --ignore-scripts
+
+      - name: ☕ Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      # cap sync needs a dist/ to copy; an empty placeholder is enough for a
+      # Java-only compile and skips the ~60s web build.
+      - name: 🔄 Sync Capacitor (placeholder web assets)
+        run: |
+          mkdir -p dist && [ -f dist/index.html ] || echo '<!doctype html><title>ci</title>' > dist/index.html
+          bunx cap sync android
+
+      - name: 🧪 Compile Android Java sources
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:compileDebugJavaWithJavac \
+            --no-daemon --no-configuration-cache --parallel --build-cache

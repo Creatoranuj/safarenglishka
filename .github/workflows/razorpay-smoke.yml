@@ -59,11 +59,20 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"amount":100,"currency":"INR","receipt":"ci-smoke"}')
           echo "HTTP $code"
+          if [ "$code" = "401" ]; then
+            # Run #35 failed here: the key ID passes the rzp_test_ prefix check
+            # but the pair is rejected. That means RAZORPAY_KEY_SECRET no longer
+            # matches RAZORPAY_KEY_ID (key regenerated in the Razorpay dashboard,
+            # or the secret was truncated when pasted).
+            echo "::error::Razorpay rejected the key pair (HTTP 401 Authentication failed). RAZORPAY_KEY_SECRET does not match RAZORPAY_KEY_ID. Regenerate the test key in Razorpay Dashboard → Settings → API Keys and update BOTH repo secrets."
+            exit 1
+          fi
           if [ "$code" != "200" ] && [ "$code" != "201" ]; then
             echo "::error::Razorpay order creation failed with HTTP $code"
             jq -r '.error.description // "no description"' /tmp/order.json || true
             exit 1
           fi
+
           jq -e '.id | startswith("order_")' /tmp/order.json > /dev/null
           echo "Order created OK (id masked)."
 

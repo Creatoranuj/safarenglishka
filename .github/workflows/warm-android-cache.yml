@@ -1,0 +1,166 @@
+name: Warm Android Cache
+
+# WHY THIS EXISTS
+# ---------------
+# GitHub Actions cache entries are ref-scoped: a cache saved on
+# `refs/tags/v1.1.0` can NEVER be restored by a run on `refs/tags/v1.1.1`.
+# Only caches saved on the DEFAULT BRANCH are visible to every other ref.
+#
+# Because `build-apk.yml` only runs on tag pushes, every release build was
+# fully cold — verified in run 33607960193 (v1.1.0):
+#   Cache not found: Linux-gradle-wrapper-...
+#   Cache not found: Linux-gradle-buildcache-...
+#   Cache not found: Linux-android-sdk-35-build-tools-35.0.0-v1
+#   Cache not found: Linux-vite-...
+# ...costing ~30s wrapper download + ~60s SDK install + a 43-66s post-job
+# save that nothing ever consumed.
+#
+# This job runs on `main` (and daily) and saves those exact same keys from
+# the default branch, so tag runs restore them. Keys MUST stay byte-identical
+# to the ones in build-apk.yml — if you change one there, change it here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'bun.lock'
+      - 'bun.lockb'
+      - 'package.json'
+      - 'vite.config.ts'
+      - '.github/workflows/warm-android-cache.yml'
+  schedule:
+    # Daily — GitHub evicts caches untouched for 7 days.
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: "-Xmx4g -Dorg.gradle.workers.max=4 -Dorg.gradle.daemon=false"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  JAVA_VERSION: '21'
+
+concurrency:
+  group: warm-android-cache
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: Populate default-branch caches for tag builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      # ---- same keys as build-apk.yml ----
+      - name: 🗂️ Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-bun-${{ hashFiles('bun.lock', 'bun.lockb', 'package.json') }}
+
+      - name: 📦 Install dependencies (bun)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile --no-progress --ignore-scripts
+
+      - name: 🗂️ Cache Vite / SWC build caches
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+            .vite
+          key: ${{ runner.os }}-vite-${{ hashFiles('vite.config.ts', 'bun.lock', 'bun.lockb') }}
+
+      - name: 🏗️ Build web app (populates vite cache)
+        run: bun run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_ENABLE_ERUDA: 'false'
+
+      - name: 💾 Cache Gradle wrapper distribution
+        uses: actions/cache@v5
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: 💾 Cache Gradle build-cache (dex / resource outputs)
+        uses: actions/cache@v5
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: ${{ runner.os }}-gradle-buildcache-${{ hashFiles('android/**/*.gradle', 'android/gradle.properties', 'android/variables.gradle', 'capacitor.config.ts', 'bun.lock', 'bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-buildcache-
+
+      - name: ☕ Setup Java 21 (with Gradle cache)
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'gradle'
+          cache-dependency-path: |
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/build.gradle
+            android/variables.gradle
+            android/app/build.gradle
+
+      - name: 🏗️ Prepare SDK directory permissions
+        run: |
+          sudo mkdir -p /usr/local/lib/android/sdk/platforms/android-35
+          sudo mkdir -p /usr/local/lib/android/sdk/build-tools/35.0.0
+          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/platforms/android-35
+          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/build-tools/35.0.0
+
+      - name: 💾 Cache Android SDK platform + build-tools
+        id: android-sdk-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: |
+            /usr/local/lib/android/sdk/platforms/android-35
+            /usr/local/lib/android/sdk/build-tools/35.0.0
+          key: ${{ runner.os }}-android-sdk-35-build-tools-35.0.0-v1
+
+      - name: 📲 Install Android SDK 35 (if not cached)
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+          fi
+
+      - name: 🔐 Normalize SDK ownership for cache save
+        run: |
+          sudo chown -R "$USER":"$USER" \
+            /usr/local/lib/android/sdk/platforms/android-35 \
+            /usr/local/lib/android/sdk/build-tools/35.0.0 || true
+
+      - name: 🔄 Sync Capacitor web assets
+        run: bunx cap sync android
+
+      # Debug variant is enough to populate the shared dex/resource build-cache
+      # entries that the signed release build reuses, and it needs no keystore.
+      - name: 🔥 Warm Gradle build-cache (assembleDebug)
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleDebug \
+            -x lint -x lintVitalRelease -x test -x check \
+            --no-daemon --no-configuration-cache --no-watch-fs \
+            --parallel --max-workers=4 --build-cache
+
+      - name: ✅ Summary
+        run: echo "Default-branch caches refreshed — tag builds will restore them." >> "$GITHUB_STEP_SUMMARY"

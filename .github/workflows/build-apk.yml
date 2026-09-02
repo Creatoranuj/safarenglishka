@@ -182,8 +182,10 @@ jobs:
       # PERF — cache Vite + SWC transform caches so warm web builds reuse
       # parsed/transformed module graphs. Saves ~10-25s on `bun run build`
       # when source has minor changes. Keyed loosely on lockfile + vite config.
-      - name: 🗂️ Cache Vite / SWC build caches
-        uses: actions/cache@v5
+      - name: 🗂️ Restore Vite / SWC build caches
+        # Restore-only (seeded from `main` by warm-android-cache.yml) — a
+        # tag-ref save is never readable by the next tag run.
+        uses: actions/cache/restore@v5
         with:
           path: |
             node_modules/.vite
@@ -191,7 +193,8 @@ jobs:
             .vite
           key: ${{ runner.os }}-vite-${{ hashFiles('vite.config.ts', 'bun.lock', 'bun.lockb') }}
           restore-keys: |
-            ${{ runner.os }}-vite-${{ hashFiles('vite.config.ts', 'bun.lock', 'bun.lockb') }}-
+            ${{ runner.os }}-vite-
+
 
       - name: 🔎 Print toolchain versions
         run: node -v && bun -v
@@ -352,30 +355,28 @@ jobs:
           fi
           echo "✅ android/ folder found"
 
-      - name: 💾 Cache Gradle wrapper distribution
+      - name: 💾 Restore Gradle wrapper distribution cache
         # actions/setup-java's `cache: gradle` only persists ~/.gradle/caches,
-        # NOT the wrapper dist (the 150MB gradle-X.Y-bin.zip). Caching it here
-        # saves ~25-35s every cold run.
-        uses: actions/cache@v5
+        # NOT the wrapper dist (the 150MB gradle-X.Y-bin.zip). Restore-only:
+        # tag runs can't read another tag's cache, so saving here is dead
+        # weight — `warm-android-cache.yml` seeds this key from `main`.
+        uses: actions/cache/restore@v5
         with:
           path: ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
 
       # PERF — Gradle build-cache (dex/resources). Reuses task outputs across
-      # runs so dexBuilder/mergeDex skip on warm hits. Key bumps when any
-      # gradle file changes; restore-keys lets us reuse from the nearest
-      # ancestor build for ~30-60s saved on typical PRs.
-      - name: 💾 Cache Gradle build-cache (dex / resource outputs)
-        uses: actions/cache@v5
+      # runs so dexBuilder/mergeDex skip on warm hits. Seeded on `main` by
+      # warm-android-cache.yml; restore-only here for the same ref-scope
+      # reason as above.
+      - name: 💾 Restore Gradle build-cache (dex / resource outputs)
+        uses: actions/cache/restore@v5
         with:
           path: ~/.gradle/caches/build-cache-1
-          # PERF: dropped the per-SHA suffix that was forcing a cache *save*
-          # on every run but never producing a clean *hit*. Keyed on the
-          # files that actually change the dex/resource graph; restore-keys
-          # widens the fallback so unrelated edits still benefit.
           key: ${{ runner.os }}-gradle-buildcache-${{ hashFiles('android/**/*.gradle', 'android/gradle.properties', 'android/variables.gradle', 'capacitor.config.ts', 'bun.lock', 'bun.lockb') }}
           restore-keys: |
             ${{ runner.os }}-gradle-buildcache-
+
 
       - name: ☕ Setup Java 21 (with Gradle cache)
         id: setup-java
@@ -440,15 +441,21 @@ jobs:
           sudo chown -R $USER:$USER /usr/local/lib/android/sdk/platforms/android-35
           sudo chown -R $USER:$USER /usr/local/lib/android/sdk/build-tools/35.0.0
 
-      - name: 💾 Cache Android SDK platform + build-tools
+      # PERF — restore-only. Tag runs can never READ a cache another tag run
+      # saved (Actions cache entries are ref-scoped; only default-branch
+      # entries are shared), so the 43-66s post-job save on v1.1.0 was pure
+      # waste. `warm-android-cache.yml` populates this exact key from `main`;
+      # here we only restore it.
+      - name: 💾 Restore Android SDK platform + build-tools cache
         id: android-sdk-cache
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: |
             /usr/local/lib/android/sdk/platforms/android-35
             /usr/local/lib/android/sdk/build-tools/35.0.0
           key: ${{ runner.os }}-android-sdk-35-build-tools-35.0.0-v1
+
       - name: 📲 Install Android SDK 35 (if not cached)
         run: |
           if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
@@ -639,6 +646,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
         run: |
           set -euo pipefail
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
@@ -664,14 +673,26 @@ jobs:
           }
           heartbeat & HEARTBEAT_PID=$!
           # Stream live via tee (see debug step above for rationale).
-          # Build APK + AAB in ONE Gradle invocation so task graph, R8,
-          # resource shrinking, and dexing run once. Play Store requires
-          # the AAB; direct-install still uses the APK.
-          ./gradlew :app:assembleRelease :app:bundleRelease \
+          # Build APK (+ AAB only when it can actually be uploaded) in ONE
+          # Gradle invocation so the task graph, R8, resource shrinking and
+          # dexing run once. PERF: bundleRelease re-dexes and re-packages the
+          # whole app (~60-90s on this project). Without
+          # PLAY_SERVICE_ACCOUNT_JSON the resulting .aab is uploaded as a
+          # 1-day artifact and then deleted — pure waste, so skip it.
+          GRADLE_TASKS=":app:assembleRelease"
+          if [ -n "${PLAY_JSON:-}" ]; then
+            GRADLE_TASKS="$GRADLE_TASKS :app:bundleRelease"
+            echo "🏪 Play credentials present — also building the AAB."
+          else
+            echo "⏭️ PLAY_SERVICE_ACCOUNT_JSON not set — skipping :app:bundleRelease (saves ~60-90s)."
+          fi
+          # shellcheck disable=SC2086
+          ./gradlew $GRADLE_TASKS \
             -x lint -x lintVitalRelease -x test -x check \
             --no-daemon --no-configuration-cache --no-watch-fs \
             --parallel --max-workers=4 --build-cache \
             --stacktrace 2>&1 \
+
             | tee "$RAW_LOG" \
             | grep --line-buffered -vE '^Note: (Some input files|Recompile with|/home/runner/.*(uses unchecked|uses or overrides))'
           STATUS=${PIPESTATUS[0]}

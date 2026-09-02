@@ -63,9 +63,15 @@ jobs:
       - name: 🔁 Cap sync
         run: bunx cap sync android
 
+      # `gradlew` loses its executable bit on a fresh checkout on macOS
+      # runners (core.fileMode), which failed maestro run #43 in 46s with
+      # "./gradlew: Permission denied" before the emulator ever booted.
       - name: 🏗️ Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
 
       - name: 📥 Install Maestro
         run: |
