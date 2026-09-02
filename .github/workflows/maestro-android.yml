@@ -74,14 +74,22 @@ jobs:
       - name: 🔁 Cap sync
         run: bunx cap sync android
 
-      # `gradlew` loses its executable bit on a fresh checkout on macOS
-      # runners (core.fileMode), which failed maestro run #43 in 46s with
-      # "./gradlew: Permission denied" before the emulator ever booted.
+      # `gradlew` loses its executable bit on a fresh checkout (core.fileMode),
+      # which failed maestro run #43 in 46s with "./gradlew: Permission denied"
+      # before the emulator ever booted.
+      #
+      # ANDROID_ABI_FILTERS: the release default is arm64-v8a/armeabi-v7a, so
+      # the debug APK carried no x86_64 native libs and run #46 died with
+      # INSTALL_FAILED_NO_MATCHING_ABIS on the (x86_64) emulator. build.gradle
+      # honours this env var — include x86_64 for the emulator build only.
       - name: 🏗️ Build debug APK
         working-directory: android
+        env:
+          ANDROID_ABI_FILTERS: x86_64,arm64-v8a
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
+
 
 
       - name: 📥 Install Maestro
