@@ -9,6 +9,8 @@ import {
   type MutableRefObject,
   type SyntheticEvent,
 } from "react";
+import { logWarn } from "@/lib/log";
+
 
 /**
  * SmartImage — resilient <img> replacement.
@@ -151,8 +153,14 @@ export const SmartImage = forwardRef<HTMLImageElement, SmartImageProps>(
         if (attempt !== fallbackSrc) {
           setFailed(true);
           setAttempt(fallbackSrc);
+          // Silent fallbacks are how the grey course-thumbnail bug hid for weeks:
+          // the UI looked "fine" while every cover 404'd. Surface it in dev.
+          if (import.meta.env.DEV) {
+            logWarn("SmartImage fell back to placeholder", { src });
+          }
           onError?.(e);
         }
+
       },
       [attempt, src, fallbackSrc, maxRetries, retryDelay, onError]
     );

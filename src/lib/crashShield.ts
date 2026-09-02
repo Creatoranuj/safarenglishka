@@ -19,6 +19,7 @@ import { requestReload } from "./reloadArbiter";
 const HEARTBEAT_INTERVAL_MS = 2_000;
 const HEARTBEAT_FREEZE_THRESHOLD_MS = 10_000;
 const MEMORY_CHECK_INTERVAL_MS = 15_000;
+let memoryMonitorTimer: number | null = null;
 const MEMORY_WARN_BYTES = 400 * 1024 * 1024; // 400 MB — Android WebView OOM zone
 
 // Reload decisions (cooldown, hidden-WebView deferral, breadcrumbs) are owned
@@ -181,8 +182,14 @@ function installMemoryMonitor() {
     memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
   };
   if (!perf.memory) return;
+  // Idempotent: a second install (HMR, double bootstrap) must not stack a
+  // second 15s poller that keeps the main thread awake twice as often.
+  if (memoryMonitorTimer != null) return;
   let lastWarnedAt = 0;
-  setInterval(() => {
+  memoryMonitorTimer = setInterval(() => {
+    // Polling a hidden WebView burns wakeups without producing a usable
+    // signal — Android has already trimmed the heap by then.
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       const used = perf.memory!.usedJSHeapSize;
       if (used > MEMORY_WARN_BYTES && Date.now() - lastWarnedAt > 60_000) {
@@ -192,7 +199,15 @@ function installMemoryMonitor() {
         console.warn(`[crashShield] heap ${mb}MB — approaching OOM`);
       }
     } catch { /* noop */ }
-  }, MEMORY_CHECK_INTERVAL_MS);
+  }, MEMORY_CHECK_INTERVAL_MS) as unknown as number;
+}
+
+/** Test/teardown hook — stops the heap poller and allows a clean re-install. */
+export function stopMemoryMonitor(): void {
+  if (memoryMonitorTimer != null) {
+    clearInterval(memoryMonitorTimer);
+    memoryMonitorTimer = null;
+  }
 }
 
 /** Listen for Android lowMemory + memorywarning, dump caches BEFORE the
