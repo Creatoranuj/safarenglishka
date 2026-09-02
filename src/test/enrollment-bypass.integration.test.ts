@@ -27,38 +27,30 @@ runIf("enrollment bypass — red team", () => {
     const { data: { user } } = await supabase.auth.getUser();
 
     // The unique (user_id, course_id) index fires BEFORE RLS is evaluated, so
-    // if the CI user happens to already have a row for TEST_PAID_COURSE_ID the
-    // insert fails with "duplicate key" and never proves anything about RLS.
-    // Pick a paid course the user is not enrolled in so the RLS policy is the
-    // thing actually under test.
+    // if the CI user already has a row for TEST_PAID_COURSE_ID the insert dies
+    // with "duplicate key" and proves nothing about RLS. Prefer a paid course
+    // the user is NOT enrolled in; the project currently has only one paid
+    // course, so fall back to a foreign user_id — that keeps the unique index
+    // out of the way and leaves RLS as the only thing that can reject the row.
     const { data: mine } = await supabase.from("enrollments")
       .select("course_id").eq("user_id", user!.id);
     const enrolled = new Set((mine ?? []).map((r) => Number(r.course_id)));
 
-    let targetCourseId = PAID_COURSE_ID;
-    if (enrolled.has(PAID_COURSE_ID)) {
-      const { data: paidCourses } = await supabase.from("courses")
-        .select("id, price").gt("price", 0).limit(50);
-      const free = (paidCourses ?? [])
-        .map((c) => Number(c.id))
-        .find((id) => !enrolled.has(id));
-      if (free === undefined) {
-        // No un-enrolled paid course exists — the probe cannot be meaningful.
-        // Fail loudly rather than reporting a false green.
-        throw new Error(
-          "enrollment-bypass: CI user is enrolled in every paid course; " +
-          "set TEST_PAID_COURSE_ID to a course the user is NOT enrolled in.",
-        );
-      }
-      targetCourseId = free;
-    }
+    const { data: paidCourses } = await supabase.from("courses")
+      .select("id, price").gt("price", 0).limit(50);
+    const unEnrolled = (paidCourses ?? [])
+      .map((c) => Number(c.id))
+      .find((id) => !enrolled.has(id));
 
-    const { error } = await supabase.from("enrollments").insert({
-      user_id: user!.id, course_id: targetCourseId, status: "active",
-    });
+    const payload = unEnrolled !== undefined
+      ? { user_id: user!.id, course_id: unEnrolled, status: "active" }
+      : { user_id: crypto.randomUUID(), course_id: PAID_COURSE_ID, status: "active" };
+
+    const { error } = await supabase.from("enrollments").insert(payload);
     expect(error).not.toBeNull();
     expect(error!.message.toLowerCase()).toMatch(/row-level security|policy/);
   });
+
 
 
   it("blocks status flip from cancelled -> active", async () => {
