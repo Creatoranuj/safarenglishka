@@ -221,22 +221,17 @@ jobs:
             adb shell ime disable com.google.android.inputmethod.latin || true
 
 
-            # ── THE FIX for "device 'emulator-5554' not found" ──
-            # Chromium reads /data/local/tmp/webview-command-line at WebView
-            # startup (first token is an ignored argv[0] placeholder). Forcing
-            # software rendering means the WebView never issues GL calls, so
-            # the emulator's swiftshader host renderer is never asked to
-            # translate them — removing the exact fault that killed qemu ~~95s
-            # into every run. Costs a few fps we do not care about headless.
-            # Run #72 survived the full 8 minutes (no qemu death) but every
-            # screenshot was pure black and the devtools hierarchy empty, so the
-            # renderer fix worked and the *compositor* is now the problem.
-            # `--in-process-gpu` + `--num-raster-threads=1` are the two flags
-            # known to hand back a black SurfaceView on swiftshader; drop them
-            # and keep only the GL-avoidance flags.
-            adb shell "echo '_ --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-2d-canvas' > /data/local/tmp/webview-command-line"
-            adb shell chmod 664 /data/local/tmp/webview-command-line || true
-            echo "webview flags: $(adb shell cat /data/local/tmp/webview-command-line)"
+            # Run #73's logcat is decisive: the app did not fail to paint, it
+            # CRASHED — `F/libc: Fatal signal 5 (SIGTRAP)` inside
+            # libwebviewchromium.so, followed by "crashed too many times,
+            # killing!". SIGTRAP in Chromium is a CHECK failure, and the only
+            # unusual input this WebView (101.0.4951.61 on google_atd API 33)
+            # received was our /data/local/tmp/webview-command-line override.
+            # Software-rendering flags that build does not accept kill the
+            # renderer at startup — which also explains the earlier "qemu died
+            # ~95s in" runs the flags were supposed to cure.
+            # Let WebView use its own defaults.
+            adb shell rm -f /data/local/tmp/webview-command-line || true
 
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
