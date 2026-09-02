@@ -268,7 +268,7 @@ function LazyPage({
             onRenderSuccess={() => onRendered(pageNumber)}
             renderAnnotationLayer
             renderTextLayer={false}
-          loading={<div style={{ width: fit.cropWidth, height: fit.cropHeight }} className="bg-neutral-100 dark:bg-neutral-900" />}
+          loading={<div style={{ width: fit.cropWidth, height: fit.cropHeight }} className="nb-reader-surface" />}
           />
         </div>
       </div>
@@ -293,10 +293,10 @@ function LazyPage({
           onRenderSuccess={() => onRendered(pageNumber)}
           renderAnnotationLayer
           renderTextLayer={false}
-            loading={<div style={{ width, height: placeholderHeight }} className="bg-neutral-100 dark:bg-neutral-900" />}
+            loading={<div style={{ width, height: placeholderHeight }} className="nb-reader-surface" />}
         />
       ) : (
-        <div style={{ width, height: placeholderHeight }} className="bg-neutral-100 dark:bg-neutral-900" />
+        <div style={{ width, height: placeholderHeight }} className="nb-reader-surface" />
       )}
     </div>
   );
@@ -1353,7 +1353,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
 
     if (resolving || (fallbackLoading && !file)) {
       return (
-        <div className="absolute inset-0 bg-neutral-100 dark:bg-neutral-900">
+        <div className="absolute inset-0 nb-reader-surface">
           {showLoadingOverlay && <ReaderProgress visible title={title} variant="pdf" />}
         </div>
       );
@@ -1363,7 +1363,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
     if (resolveError) {
       pdfLogError("resolve-error", resolveError, { url });
       return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-100 p-8 text-center text-sm dark:bg-neutral-900">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 nb-reader-surface p-8 text-center text-sm">
           <p className="text-destructive">{friendlyPdfErrorMessage(new Error(resolveError), url)}</p>
           <div className="flex items-center gap-4">
             <button
@@ -1387,7 +1387,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
 
     if (src && isKnownNonPdfWebUrl(src)) {
       return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-100 p-8 text-center text-sm dark:bg-neutral-900">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 nb-reader-surface p-8 text-center text-sm">
           <p className="text-foreground">This attachment is a web page, not a PDF.</p>
           <button
             type="button"
@@ -1429,7 +1429,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
 
     if (error) {
       return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-100 p-8 text-center text-sm dark:bg-neutral-900">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 nb-reader-surface p-8 text-center text-sm">
           <p className="max-w-sm text-destructive">{error}</p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             {errorAction ? (
@@ -1478,7 +1478,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
     // which is exactly what users were seeing on APK for missing offline files.
     if (!file) {
       return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-100 p-8 text-center text-sm dark:bg-neutral-900">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 nb-reader-surface p-8 text-center text-sm">
           <p className="text-destructive">Offline copy missing for this file.</p>
           <p className="text-muted-foreground">
             Connect to the internet and re-download it to view again.
@@ -1492,7 +1492,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
         ref={setScrollEl}
         data-archive-virtualized={isArchiveSource(src) ? "true" : undefined}
         className={cn(
-          "absolute inset-0 overflow-y-auto overscroll-contain bg-neutral-100 [&_.react-pdf__Document]:w-full [&_.react-pdf__Page]:!mx-auto [&_.react-pdf__Page]:!w-full [&_.react-pdf__Page]:!max-w-full [&_.react-pdf__Page__canvas]:!h-auto [&_.react-pdf__Page__canvas]:!w-full [&_.react-pdf__Page__canvas]:!max-w-full [&_.react-pdf__Page__canvas]:!block [&_.annotationLayer_section]:!pointer-events-auto dark:bg-neutral-900",
+          "nb-reader-surface absolute inset-0 overflow-y-auto overscroll-contain [&_.react-pdf__Document]:w-full [&_.react-pdf__Page]:!mx-auto [&_.react-pdf__Page]:!w-full [&_.react-pdf__Page]:!max-w-full [&_.react-pdf__Page__canvas]:!h-auto [&_.react-pdf__Page__canvas]:!w-full [&_.react-pdf__Page__canvas]:!max-w-full [&_.react-pdf__Page__canvas]:!block [&_.annotationLayer_section]:!pointer-events-auto",
           zoom > 1 ? "overflow-x-auto" : "overflow-x-hidden"
         )}
         onClick={onSurfaceTap}
@@ -1538,7 +1538,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
                   : PDF_OPTIONS
             }
             loading={
-              <div className="absolute inset-0 h-full w-full bg-neutral-100 motion-safe:animate-[fade-in_180ms_ease-out_120ms_both] dark:bg-neutral-900">
+              <div className="absolute inset-0 h-full w-full nb-reader-surface motion-safe:animate-[fade-in_180ms_ease-out_120ms_both]">
                 {showLoadingOverlay && <ReaderProgress visible title={title} variant="pdf" />}
               </div>
             }

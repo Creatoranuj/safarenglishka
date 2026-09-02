@@ -573,7 +573,15 @@ export default function DocReaderShell({
   const showAddToLibrary = source !== "library";
 
   return (
-    <div ref={shellRef} className="nb-reader-surface fixed inset-0 z-[60] flex motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-testid="doc-reader-shell">
+    // `dark` + black base: the reader is its own dark surface. In the light
+    // app theme the chrome resolved to `bg-card` (white) and the page
+    // container to `bg-neutral-100`, which painted a white strip across the
+    // top of dark PDFs — in portrait (header bar) and as a hairline along the
+    // rotated frame's top edge in landscape. Scoping `dark` here makes every
+    // `dark:` variant and CSS token inside the reader resolve dark, and
+    // `bg-black` guarantees nothing light can bleed through at any edge.
+    <div ref={shellRef} className="nb-reader-surface dark [color-scheme:dark] bg-black fixed inset-0 z-[60] flex motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-testid="doc-reader-shell">
+
       {/* Opaque band behind the status bar / notch. Without it a white strip
           from the page background bleeds through above the PDF (browser and
           Capacitor WebView alike). Not inside the rotation frame on purpose.
@@ -595,7 +603,7 @@ export default function DocReaderShell({
       {/* Center column — this is also the pseudo-landscape rotation frame, so
           header, PDF surface, FABs and the page chip all rotate together. */}
       <div
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black"
         style={rotationFrameStyle(pseudoLandscape)}
         {...(pseudoLandscape ? { [ROTATION_FRAME_ATTR]: "true" } : {})}
         onClick={handleSurfaceTap}
@@ -609,7 +617,7 @@ export default function DocReaderShell({
           // When hidden we ALSO fade + `invisible` it: on Android WebViews the
           // translate alone left a pale sliver of the bar's safe-area padding
           // across the top of locally-opened (offline) PDFs.
-          className={`safe-area-top absolute left-0 right-0 top-0 z-50 flex min-h-[48px] items-center gap-2 border-b bg-card/95 px-3 shadow-sm backdrop-blur transition-[transform,opacity] duration-300 ${
+          className={`nb-reader-chrome safe-area-top absolute left-0 right-0 top-0 z-50 flex min-h-[48px] items-center gap-2 border-b px-3 shadow-sm backdrop-blur transition-[transform,opacity] duration-300 ${
             headerVisible
               ? "translate-y-0 opacity-100 pointer-events-auto"
               : "opacity-0 invisible pointer-events-none"
@@ -733,7 +741,7 @@ export default function DocReaderShell({
               size="icon"
               onClick={() => { void selectionHaptic(); onBack(); }}
               aria-label="Back"
-              className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+              className="nb-reader-chrome pointer-events-auto h-11 w-11 rounded-full shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -744,7 +752,7 @@ export default function DocReaderShell({
                   size="icon"
                   onClick={() => { void selectionHaptic(); setNotesOpen((value) => !value); }}
                   aria-label="Toggle notes"
-                  className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+                  className="nb-reader-chrome pointer-events-auto h-11 w-11 rounded-full shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
                 >
                   <NotebookPen className="h-5 w-5" />
                 </Button>
@@ -759,7 +767,7 @@ export default function DocReaderShell({
                 }}
                 aria-label="Search in document"
                 aria-pressed={searchOpen}
-                className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+                className="nb-reader-chrome pointer-events-auto h-11 w-11 rounded-full shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
               >
                 <Search className="h-5 w-5" />
               </Button>
@@ -773,7 +781,7 @@ export default function DocReaderShell({
                 }}
                 aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                 aria-pressed={isFullscreen}
-                className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+                className="nb-reader-chrome pointer-events-auto h-11 w-11 rounded-full shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
               >
                 {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
               </Button>
@@ -800,7 +808,7 @@ export default function DocReaderShell({
             bar) — the previous safe-area-inset-top offset left a visible
             ~24–48 px white strip above the PDF on notched devices. */}
         <div
-          className="nb-reader-surface absolute inset-x-0 bottom-0 transition-[top] duration-300"
+          className="nb-reader-surface absolute inset-x-0 bottom-0 bg-black transition-[top] duration-300"
           style={{
             // In landscape the page stays full-bleed at top:0 — the floating
             // header carries its own safe-area padding, and the offset used to

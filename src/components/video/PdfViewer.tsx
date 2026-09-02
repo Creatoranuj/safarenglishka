@@ -257,7 +257,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-card"
-              : "absolute inset-0 w-full h-full overflow-hidden bg-card"
+              : "nb-reader-surface absolute inset-0 w-full h-full overflow-hidden"
           }
           style={
             chromeVisible
@@ -277,7 +277,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-card"
-              : "absolute inset-0 w-full h-full overflow-hidden bg-card"
+              : "nb-reader-surface absolute inset-0 w-full h-full overflow-hidden"
           }
           style={
             chromeVisible
@@ -298,7 +298,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-card landscape:!h-[calc(100dvh-var(--nb-player-h,56.25vw)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] landscape:!min-h-[200px]"
-              : "absolute inset-0 w-full h-full overflow-hidden bg-card"
+              : "nb-reader-surface absolute inset-0 w-full h-full overflow-hidden"
           }
           style={
             chromeVisible
@@ -335,7 +335,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
 
     const wrapperClass = chromeVisible
       ? "relative w-full overflow-hidden bg-card landscape:!h-[calc(100dvh-var(--nb-player-h,56.25vw)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] landscape:!min-h-[200px]"
-      : "absolute inset-0 w-full h-full overflow-hidden bg-card";
+      : "nb-reader-surface absolute inset-0 w-full h-full overflow-hidden";
 
     const wrapperStyle: React.CSSProperties = chromeVisible
       ? {

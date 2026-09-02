@@ -71,15 +71,32 @@ const Admin = () => {
   const activeTab = searchParams.get("tab") || "overview";
   const setActiveTab = (tab: string) => setSearchParams({ tab }, { replace: true });
 
-  // Auto-center the active tab in the horizontally scrolling TabsList so its
-  // label is never clipped at the edges.
+  // Auto-center the active chip inside the horizontal TabsList.
+  // NOTE: scrollIntoView() also scrolls the page/ancestors (it dragged the
+  // whole admin page down so the chip row landed mid-screen — Screenshot 2).
+  // We scroll only the chip scroller's own scrollLeft instead.
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>(`[data-admin-tabs] [data-tab="${activeTab}"]`);
-      el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-    });
-    return () => cancelAnimationFrame(raf);
+    // Two passes: the first lands the chip immediately after the tab change,
+    // the second (after fonts/badges settle) corrects any layout shift.
+    // Rect math instead of offsetLeft — offsetLeft is measured from the
+    // nearest positioned ancestor, which is the bordered wrapper, not the
+    // scroller, and that mis-centred the strip on first paint.
+    const center = (behavior: ScrollBehavior) => {
+      const list = document.querySelector<HTMLElement>("[data-admin-tabs]");
+      const el = list?.querySelector<HTMLElement>(`[data-tab="${activeTab}"]`);
+      if (!list || !el) return;
+      const delta =
+        el.getBoundingClientRect().left - list.getBoundingClientRect().left;
+      const target =
+        list.scrollLeft + delta - (list.clientWidth - el.offsetWidth) / 2;
+      const max = Math.max(0, list.scrollWidth - list.clientWidth);
+      list.scrollTo({ left: Math.min(Math.max(0, target), max), behavior });
+    };
+    const raf = requestAnimationFrame(() => center("auto"));
+    const t = window.setTimeout(() => center("smooth"), 250);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(t); };
   }, [activeTab]);
+
 
   // -- DATA STATES --
   const [payments, setPayments] = useState<any[]>([]);
@@ -591,7 +608,25 @@ const Admin = () => {
           </Button>
         </div>
 
-        {/* Stats grid + batch summary moved into the "Overview" tab below. */}
+        {/* Stat cards stay pinned above the chip strip (Screenshot 1 layout):
+            numbers first, then the tab chips, then the tab body. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4 animate-fade-in-up">
+          {stats.map((stat) => (
+            <Card key={stat.label} className={`border-none shadow-sm ${stat.tab ? 'cursor-pointer active:scale-[0.98] transition-transform duration-150' : ''}`}
+              onClick={() => { if (stat.tab) { void selectionHaptic(); setActiveTab(stat.tab); } }}>
+              <CardContent className="p-2 md:p-4 flex items-center gap-1.5 md:gap-4 min-w-0">
+                <div className={`p-1.5 md:p-3 rounded-md md:rounded-xl shrink-0 ${stat.color}`}>
+                  <stat.icon className="h-3.5 w-3.5 md:h-6 md:w-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-base md:text-2xl font-bold text-foreground leading-tight tabular-nums">{stat.value}</p>
+                  <p className="text-[10px] md:text-sm text-muted-foreground font-medium truncate">{stat.label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
 
 
 
@@ -622,11 +657,17 @@ const Admin = () => {
               scrolls. `pl-2 pr-2` keeps the first/last chip comfortably
               inside the border without any overlay. */}
           <div className="relative w-full max-w-full overflow-hidden rounded-lg border bg-card">
+            {/* `justify-start` is load-bearing: the TabsList base style is
+                `justify-center`, which on an overflowing scroller pushes the
+                first chips into unreachable negative space (Overview/Batches
+                were cut off on the left and could never be scrolled to). */}
             <TabsList
-              className="bg-transparent border-0 rounded-none w-full overflow-x-auto scrollbar-hide flex flex-nowrap h-auto gap-1 p-1 snap-x snap-proximity scroll-px-2"
+              className="bg-transparent border-0 rounded-none w-full justify-start overflow-x-auto scrollbar-hide flex flex-nowrap h-auto gap-1 p-1 snap-x snap-proximity scroll-px-2"
               data-admin-tabs=""
             >
+
             <TabsTrigger data-tab="overview" value="overview" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><LayoutDashboard className="h-4 w-4" />Overview</TabsTrigger>
+            <TabsTrigger data-tab="batches" value="batches" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><GraduationCap className="h-4 w-4" />Batches</TabsTrigger>
             <TabsTrigger data-tab="courses" value="courses" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><BookOpen className="h-4 w-4" />Courses</TabsTrigger>
             <TabsTrigger data-tab="live" value="live" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1 text-destructive data-[state=active]:text-destructive"><Radio className="h-4 w-4" />Live</TabsTrigger>
             <TabsTrigger data-tab="payments" value="payments" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1">Payments <Badge variant="destructive" className="ml-1">{statsData.pendingPayments}</Badge></TabsTrigger>
@@ -647,31 +688,43 @@ const Admin = () => {
           </TabsList>
           </div>
 
-          {/* OVERVIEW TAB — stats + batch-wise students (was pinned above the
-              tab strip and made the admin page one very long mobile scroll). */}
-          <TabsContent value="overview">{activeTab === 'overview' && (<>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4 animate-fade-in-up">
-              {stats.map((stat) => (
-                <Card key={stat.label} className={`border-none shadow-sm ${stat.tab ? 'cursor-pointer active:scale-[0.98] transition-transform duration-150' : ''}`}
-                  onClick={() => { if (stat.tab) { void selectionHaptic(); setActiveTab(stat.tab); } }}>
-                  <CardContent className="p-2 md:p-4 flex items-center gap-1.5 md:gap-4 min-w-0">
-                    <div className={`p-1.5 md:p-3 rounded-md md:rounded-xl shrink-0 ${stat.color}`}>
-                      <stat.icon className="h-3.5 w-3.5 md:h-6 md:w-6" />
-                    </div>
+          {/* OVERVIEW TAB — quick jump tiles. Stat cards now live above the
+              chip strip (always visible), batch data has its own chip. */}
+          <TabsContent value="overview">{activeTab === 'overview' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 animate-fade-in-up">
+              {[
+                { label: "Batch Details", desc: "Batch-wise students", icon: GraduationCap, tab: "batches" },
+                { label: "Upload Content", desc: "Lectures & notes", icon: Upload, tab: "content" },
+                { label: "Live Classes", desc: "Schedule & manage", icon: Radio, tab: "live" },
+                { label: "Payments", desc: "Approve requests", icon: IndianRupee, tab: "payments" },
+                { label: "Courses", desc: "Create & edit", icon: BookOpen, tab: "courses" },
+                { label: "Users", desc: "Roles & access", icon: Users, tab: "users" },
+                { label: "Enrollments", desc: "Assign students", icon: UserCheck, tab: "enrollments" },
+                { label: "Sessions", desc: "Active devices", icon: Monitor, tab: "sessions" },
+              ].map((q) => (
+                <Card
+                  key={q.tab}
+                  className="cursor-pointer border-border active:scale-[0.98] transition-transform duration-150"
+                  onClick={() => { void selectionHaptic(); setActiveTab(q.tab); }}
+                >
+                  <CardContent className="p-3 md:p-4 flex items-start gap-2 min-w-0">
+                    <q.icon className="h-4 w-4 md:h-5 md:w-5 text-primary shrink-0 mt-0.5" />
                     <div className="min-w-0">
-                      <p className="text-base md:text-2xl font-bold text-foreground leading-tight tabular-nums">{stat.value}</p>
-                      <p className="text-[10px] md:text-sm text-muted-foreground font-medium truncate">{stat.label}</p>
+                      <p className="text-sm font-semibold text-foreground truncate">{q.label}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{q.desc}</p>
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
+          )}</TabsContent>
 
-            {/* Batch-wise student summary (counts + link to Batch Monitor) */}
-            <div className="mt-4 md:mt-6">
+          {/* BATCHES TAB — batch-wise student details (moved out of Overview). */}
+          <TabsContent value="batches">{activeTab === 'batches' && (
+            <div className="space-y-4 animate-fade-in-up">
               <BatchSummaryCard />
             </div>
-          </>)}</TabsContent>
+          )}</TabsContent>
 
 
 

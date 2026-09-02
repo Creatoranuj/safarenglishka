@@ -35,21 +35,26 @@ const BatchSummaryCard = () => {
   const totalStudents = rows.reduce((s, r) => s + Number(r.students || 0), 0);
 
   return (
-    <Card className="border-border">
-      <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base font-semibold flex items-center gap-2">
-          <GraduationCap className="h-4 w-4 text-primary" />
-          Batch-wise Students
-          <Badge variant="secondary" className="ml-1">{totalStudents}</Badge>
-        </CardTitle>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate("/admin/batch-monitor")}>
-            Batch Monitor <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
+    <Card className="border-border overflow-hidden">
+      <CardHeader className="pb-3 gap-2 space-y-0">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <CardTitle className="text-base font-semibold flex items-center gap-2 min-w-0">
+            <GraduationCap className="h-4 w-4 text-primary shrink-0" />
+            <span className="truncate">Batch-wise Students</span>
+            <Badge variant="secondary" className="shrink-0">{totalStudents}</Badge>
+          </CardTitle>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button variant="ghost" size="sm" aria-label="Refresh batches" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1 hidden sm:inline-flex" onClick={() => navigate("/admin/batch-monitor")}>
+              Batch Monitor <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
+        <Button variant="outline" size="sm" className="gap-1 w-full sm:hidden" onClick={() => navigate("/admin/batch-monitor")}>
+          Batch Monitor <ArrowRight className="h-3.5 w-3.5" />
+        </Button>
       </CardHeader>
       <CardContent className="p-0">
         <div className="max-h-72 overflow-auto">
