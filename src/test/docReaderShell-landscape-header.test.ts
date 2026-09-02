@@ -54,3 +54,28 @@ describe("DocReaderShell hidden header cannot leak out of the rotation frame", (
     );
   });
 });
+
+describe("DocReaderShell landscape has no full-width toolbar surface", () => {
+  it("never mounts the header in either landscape mode", () => {
+    expect(src).toContain("{!landscape && !pseudoLandscape && <header");
+  });
+
+  it("replaces it with independent floating controls", () => {
+    expect(src).toContain('data-testid="reader-landscape-controls"');
+    expect(src).toContain("{(landscape || pseudoLandscape) && headerVisible && (");
+  });
+
+  it("keeps back and document actions reachable in landscape", () => {
+    const start = src.indexOf('data-testid="reader-landscape-controls"');
+    const end = src.indexOf("{/* Eye-comfort sepia overlay");
+    const block = src.slice(start, end);
+    expect(block).toContain('aria-label="Back"');
+    expect(block).toContain('aria-label="Search in document"');
+    expect(block).not.toContain("border-b");
+  });
+
+  it("protects the floating controls from left and right cutouts", () => {
+    expect(src).toContain('paddingLeft: "calc(env(safe-area-inset-left, 0px) + 8px)"');
+    expect(src).toContain('paddingRight: "calc(env(safe-area-inset-right, 0px) + 8px)"');
+  });
+});

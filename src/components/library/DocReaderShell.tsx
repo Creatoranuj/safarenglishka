@@ -21,6 +21,7 @@ import { useIsMobile } from "../../hooks/use-mobile";
 import { downloadFile } from "../../utils/fileUtils";
 import { SpokeSpinner } from "../ui/spoke-spinner";
 import { getReadingPage, setReadingPage } from "../../services/libraryNotes";
+import { fetchDocumentProgress, queueDocumentProgress } from "../../services/documentProgress";
 import { addBreadcrumb } from "../../lib/sentry";
 import { toast } from "sonner";
 import { addUrlToDefaultLibrary } from "../../services/personalLibrary";
@@ -117,6 +118,8 @@ export default function DocReaderShell({
   const [initialPage, setInitialPage] = useState<number | undefined>(undefined);
   const idleTimer = useRef<number | null>(null);
   const pageTimer = useRef<number | null>(null);
+  /** Most recent page reported by the viewer — flushed on close / background. */
+  const lastPageRef = useRef<number>(0);
   /** Timestamp of the last accepted surface tap — de-dupes the double path. */
   const lastTapRef = useRef(0);
 
@@ -253,7 +256,15 @@ export default function DocReaderShell({
   useEffect(() => {
     addBreadcrumb("pdf", "open", { source, offline: /^(capacitor:|file:|blob:)/i.test(url), itemId });
     if (itemId) {
-      getReadingPage(itemId).then((p) => setInitialPage(p > 1 ? p : undefined));
+      // The device copy restores instantly; a stored position from another
+      // device wins when it is further along, so a reinstall resumes correctly.
+      void (async () => {
+        const local = await getReadingPage(itemId);
+        let page = local;
+        const remote = await fetchDocumentProgress(itemId);
+        if (remote && remote.page > page) page = remote.page;
+        setInitialPage(page > 1 ? page : undefined);
+      })();
     }
   }, [url, itemId, source]);
 
@@ -419,12 +430,48 @@ export default function DocReaderShell({
 
   const handlePageChange = useCallback(
     (page: number) => {
+      lastPageRef.current = page;
       if (!itemId) return;
       if (pageTimer.current) window.clearTimeout(pageTimer.current);
-      pageTimer.current = window.setTimeout(() => setReadingPage(itemId, page), 500);
+      // Debounced on purpose: scrolling reports every visible page, and progress
+      // must never become a per-frame write on the device store or the network.
+      pageTimer.current = window.setTimeout(() => {
+        void setReadingPage(itemId, page);
+        void queueDocumentProgress({
+          documentKey: itemId,
+          page,
+          totalPages: viewerRef.current?.getNumPages() || null,
+          source,
+        });
+      }, 500);
     },
-    [itemId]
+    [itemId, source]
   );
+
+  /** Flush the last position when the app is backgrounded or the reader closes. */
+  const flushProgress = useCallback(() => {
+    if (!itemId) return;
+    const page = lastPageRef.current;
+    if (!page) return;
+    void setReadingPage(itemId, page);
+    void queueDocumentProgress({
+      documentKey: itemId,
+      page,
+      totalPages: viewerRef.current?.getNumPages() || null,
+      source,
+    });
+  }, [itemId, source]);
+
+  useEffect(() => {
+    const onHidden = () => { if (document.visibilityState === "hidden") flushProgress(); };
+    document.addEventListener("visibilitychange", onHidden);
+    window.addEventListener("app:paused", flushProgress);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("app:paused", flushProgress);
+      flushProgress();
+    };
+  }, [flushProgress]);
 
   const handleSurfaceTap = () => {
     // Single tap reveals/hides chrome + FABs (rotate, autoscroll, save).
@@ -554,7 +601,7 @@ export default function DocReaderShell({
         onClick={handleSurfaceTap}
       >
 
-        <header
+        {!landscape && !pseudoLandscape && <header
           ref={setHeaderEl}
           data-testid="reader-header"
           // z-50 keeps the toolbar above the save-progress overlay (z-40) and
@@ -663,7 +710,76 @@ export default function DocReaderShell({
             {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
           </Button>
 
-        </header>
+        </header>}
+
+        {/* Landscape: no full-width toolbar surface at all. Android WebViews
+            rasterized the blurred bar's edge inside the rotated frame and left a
+            pale chip pinned to the physical top-left, which is the strip reported
+            from Saved / My Library. Independent floating controls carry the same
+            actions with nothing full-width left to leak. */}
+        {(landscape || pseudoLandscape) && headerVisible && (
+          <div
+            data-testid="reader-landscape-controls"
+            className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between"
+            style={{
+              paddingTop: "max(env(safe-area-inset-top, 0px), 8px)",
+              paddingLeft: "calc(env(safe-area-inset-left, 0px) + 8px)",
+              paddingRight: "calc(env(safe-area-inset-right, 0px) + 8px)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={() => { void selectionHaptic(); onBack(); }}
+              aria-label="Back"
+              className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex items-center gap-2">
+              {itemId && (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={() => { void selectionHaptic(); setNotesOpen((value) => !value); }}
+                  aria-label="Toggle notes"
+                  className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+                >
+                  <NotebookPen className="h-5 w-5" />
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => {
+                  void selectionHaptic();
+                  setSearchOpen((value) => !value);
+                  setHeaderVisible(true);
+                }}
+                aria-label="Search in document"
+                aria-pressed={searchOpen}
+                className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void selectionHaptic();
+                  toggleFullscreen();
+                }}
+                aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                aria-pressed={isFullscreen}
+                className="pointer-events-auto h-11 w-11 rounded-full bg-card/90 shadow-md backdrop-blur-sm transition-transform duration-150 ease-out active:scale-[0.94]"
+              >
+                {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Eye-comfort sepia overlay — sits above the PDF, ignores pointer events. */}
         {readingMode && (

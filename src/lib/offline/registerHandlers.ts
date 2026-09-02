@@ -8,6 +8,7 @@
  */
 import { supabase } from "../../integrations/supabase/client";
 import { registerMutationHandler, installMutationQueueRunner } from "./mutationQueue";
+import { documentProgressTable } from "../../services/documentProgress";
 import { captureException } from "../sentry";
 
 let installed = false;
@@ -41,6 +42,18 @@ export function installOfflineMutationHandlers(): () => void {
       .upsert(payload as never, { onConflict: "user_id,lesson_id" });
     if (error) {
       captureException(error, { surface: "offline-queue:lesson_progress.upsert" });
+      throw error;
+    }
+  });
+
+  // document_progress upsert — cross-device PDF reading position.
+  registerMutationHandler("document_progress.upsert", async (payload) => {
+    const { error } = await documentProgressTable().upsert(
+      payload as Record<string, unknown>,
+      { onConflict: "user_id,document_key" },
+    );
+    if (error) {
+      captureException(error, { surface: "offline-queue:document_progress.upsert" });
       throw error;
     }
   });
