@@ -156,26 +156,22 @@ androidWebViewHierarchy: devtools
 
 
 # 6) Profile tab — session persists across nav (email visible = session alive)
+# The tap is NOT optional: run #55 marked it optional, the tap silently did
+# nothing, and the follow-up assertion still passed because "Profile" is a
+# bottom-nav label present on every screen. The flow then tried to open
+# Settings while still on Downloads. Assert a profile-only token instead.
 - tapOn:
     id: "bottom-nav-profile"
-    optional: true
-- tapOn:
-    text: "Profile"
-    optional: true
 - extendedWaitUntil:
-    visible: "Profile|Personal Information|Email|Sign Out"
-    timeout: 15000
+    visible: "Personal Information|Sign Out|Account Settings"
+    timeout: 20000
 
 # 7) Settings → Delete Account visible (Play Store policy guardrail)
 - tapOn:
     id: "profile-settings"
-    optional: true
-- tapOn:
-    text: "Settings"
-    optional: true
 - extendedWaitUntil:
-    visible: "Settings|Delete Account|Delete my account|Account"
-    timeout: 15000
+    visible: "Delete Account|Delete my account|Account Settings"
+    timeout: 20000
 
 # 8) Hardware back → exit hint (regression fix from useAndroidBackButton)
 - pressKey: Back
