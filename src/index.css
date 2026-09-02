@@ -1028,48 +1028,29 @@ body.nb-screenshot-shield-active [data-lesson-root] [contenteditable="true"] {
   user-select: text;
 }
 
-/* ------------------------------------------------------------------ */
-/* Offline document reader surface.                                    */
-/* `nb-reader-surface` / `body.nb-doc-reader-open` were applied in      */
-/* DocReaderShell but never defined anywhere, so the light theme's      */
-/* white body kept painting a strip through the notch band above the    */
-/* PDF (portrait AND landscape). These rules are that missing half.     */
-/* The reader is intentionally theme-independent: a document reader is  */
-/* always a dark surface so page content never sits next to white.      */
-/* ------------------------------------------------------------------ */
-:root {
-  --nb-reader-bg: 0 0% 0%;
-  --nb-reader-chrome: 0 0% 7%;
-  --nb-reader-chrome-fg: 0 0% 98%;
-}
-
+/* Fullscreen document reader. Keep its WebView canvas theme-aware; the
+   Android system-bar strip is owned by MainActivity immersive mode, not by
+   painting the whole reader black. */
 body.nb-doc-reader-open {
-  background: hsl(var(--nb-reader-bg)) !important;
-  /* Body gutters would otherwise show as light bands at the notch edges. */
+  background: hsl(var(--background)) !important;
   padding: 0 !important;
   overflow: hidden !important;
   overscroll-behavior: none;
 }
 
 .nb-reader-surface {
-  background: hsl(var(--nb-reader-bg));
-  color: hsl(var(--nb-reader-chrome-fg));
-  color-scheme: dark;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
-/* Reader chrome (header bar, floating round buttons, landscape controls).
-   `bg-card` resolved to white in the light theme; the safe-area padding it
-   reserves is exactly the white strip reported on notched devices. */
 .nb-reader-chrome {
-  background: hsl(var(--nb-reader-chrome) / 0.92) !important;
-  color: hsl(var(--nb-reader-chrome-fg));
-  border-color: hsl(var(--nb-reader-chrome-fg) / 0.12);
+  background: hsl(var(--card) / 0.95) !important;
+  color: hsl(var(--card-foreground));
+  border-color: hsl(var(--border));
 }
-.nb-reader-chrome svg { color: hsl(var(--nb-reader-chrome-fg)); }
+.nb-reader-chrome svg { color: currentColor; }
 
-/* Page scroller / placeholders inside the reader — neutral-100 in light
-   theme showed as a white field around dark PDF pages. */
 .nb-reader-surface .react-pdf__Document,
 .nb-reader-surface [data-nb-pdf-scroll] {
-  background: hsl(var(--nb-reader-bg));
+  background: hsl(var(--background));
 }

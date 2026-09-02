@@ -124,6 +124,16 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
 
+  const stopVoice = useCallback(() => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      try { recognition.abort?.(); } catch { /* already stopped */ }
+      try { recognition.stop?.(); } catch { /* already stopped */ }
+    }
+    setIsListening(false);
+  }, []);
+
   // Image/doc upload state
   const [uploadedFile, setUploadedFile] = useState<{ file: File; previewUrl: string; type: "image" | "pdf" } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -137,6 +147,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
   // Hide BottomNav when chat is open on mobile + Android hardware-back sentinel.
   useEffect(() => {
     if (!isOpen) {
+      stopVoice();
       document.body.classList.remove('chat-fullscreen-open');
       return;
     }
@@ -152,7 +163,15 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
         try { window.history.back(); } catch {}
       }
     };
-  }, [isOpen]);
+  }, [isOpen, stopVoice]);
+
+  // Fullscreen readers open in-place, so route-based chat unmounting is not
+  // guaranteed. Release Android's microphone before system bars go immersive.
+  useEffect(() => {
+    const stopForReader = () => stopVoice();
+    window.addEventListener("safar:reader-open", stopForReader);
+    return () => window.removeEventListener("safar:reader-open", stopForReader);
+  }, [stopVoice]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -167,11 +186,9 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
   // Cleanup recognition on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
+      stopVoice();
     };
-  }, []);
+  }, [stopVoice]);
 
   // app-crash-shield: revoke any dangling preview blob URL on unmount so
   // closing the widget mid-attach (before send/remove) doesn't leak memory
@@ -193,8 +210,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
     if (!voiceSupported) return;
 
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopVoice();
       return;
     }
 
@@ -217,10 +233,12 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
     };
 
     recognition.onend = () => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
       setIsListening(false);
     };
 
     recognition.onerror = () => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
       setIsListening(false);
     };
 

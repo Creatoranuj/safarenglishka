@@ -27,7 +27,6 @@ import { toast } from "sonner";
 import { addUrlToDefaultLibrary } from "../../services/personalLibrary";
 import { lockOrientation, unlockOrientation, shouldCssRotate, isViewportLandscape } from "../../lib/screenOrientation";
 import { tapHaptic, selectionHaptic } from "../../lib/native/haptics";
-import { hideStatusBar, showStatusBar, setStatusBarOverlay, setStatusBarBackground, applyStatusBarForTheme } from "../../lib/nativeChrome";
 import { acquireReaderImmersive, enterImmersive } from "../../lib/androidImmersive";
 import { useReaderFullscreen } from "../../hooks/useReaderFullscreen";
 import { ROTATION_FRAME_ATTR, rotationFrameStyle, notifyPortalHostChanged } from "../../lib/rotationFrame";
@@ -173,21 +172,16 @@ export default function DocReaderShell({
   // GlobalBottomNav watches this body attribute via MutationObserver.
   useEffect(() => {
     document.body.setAttribute("data-reader-open", "true");
+    if (source === "library") window.dispatchEvent(new Event("safar:reader-open"));
     return () => {
       document.body.removeAttribute("data-reader-open");
     };
-  }, []);
+  }, [source]);
 
-  // Kill the white status-bar strip on Android while the reader is open.
-  // Matches the video-player behaviour (see useVideoStatusBarHide). Web is
-  // a no-op; always restore on unmount so navigating away can never leave
-  // the app in hidden-chrome state.
+  // MainActivity is the single owner of Android system-bar visibility while
+  // this reader is open. Mixing the StatusBar plugin with the native bridge
+  // created competing overlay/show/hide calls during rotation and resume.
   useEffect(() => {
-    // Overlay mode: if Android reveals a transient bar (edge swipe) it floats
-    // over the page instead of shrinking the WebView and re-adding a strip.
-    void setStatusBarOverlay(true);
-    void setStatusBarBackground("#000000");
-    void hideStatusBar();
     const releaseImmersive = acquireReaderImmersive();
 
     // Android restores the system bars on rotation / resume / focus, which
@@ -198,7 +192,6 @@ export default function DocReaderShell({
     const reapply = () => {
       if (t) window.clearTimeout(t);
       t = window.setTimeout(() => {
-        void hideStatusBar();
         enterImmersive();
       }, 120);
     };
@@ -216,11 +209,6 @@ export default function DocReaderShell({
       window.removeEventListener("focus", reapply);
       window.visualViewport?.removeEventListener("resize", reapply);
       document.removeEventListener("visibilitychange", onVisible);
-      void showStatusBar();
-      void setStatusBarOverlay(false);
-      void applyStatusBarForTheme(
-        document.documentElement.classList.contains("dark") ? "dark" : "light",
-      );
       releaseImmersive();
     };
   }, []);
@@ -573,14 +561,7 @@ export default function DocReaderShell({
   const showAddToLibrary = source !== "library";
 
   return (
-    // `dark` + black base: the reader is its own dark surface. In the light
-    // app theme the chrome resolved to `bg-card` (white) and the page
-    // container to `bg-neutral-100`, which painted a white strip across the
-    // top of dark PDFs — in portrait (header bar) and as a hairline along the
-    // rotated frame's top edge in landscape. Scoping `dark` here makes every
-    // `dark:` variant and CSS token inside the reader resolve dark, and
-    // `bg-black` guarantees nothing light can bleed through at any edge.
-    <div ref={shellRef} className="nb-reader-surface dark [color-scheme:dark] bg-black fixed inset-0 z-[60] flex motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-testid="doc-reader-shell">
+    <div ref={shellRef} className="nb-reader-surface fixed inset-0 z-[60] flex motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-testid="doc-reader-shell">
 
       {/* Opaque band behind the status bar / notch. Without it a white strip
           from the page background bleeds through above the PDF (browser and
@@ -596,14 +577,14 @@ export default function DocReaderShell({
         <div
           aria-hidden="true"
           data-testid="reader-notch-band"
-          className="pointer-events-none fixed inset-x-0 top-0 z-[75] bg-black"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[75] bg-background"
           style={{ height: "env(safe-area-inset-top, 0px)" }}
         />
       )}
       {/* Center column — this is also the pseudo-landscape rotation frame, so
           header, PDF surface, FABs and the page chip all rotate together. */}
       <div
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
         style={rotationFrameStyle(pseudoLandscape)}
         {...(pseudoLandscape ? { [ROTATION_FRAME_ATTR]: "true" } : {})}
         onClick={handleSurfaceTap}
@@ -808,7 +789,7 @@ export default function DocReaderShell({
             bar) — the previous safe-area-inset-top offset left a visible
             ~24–48 px white strip above the PDF on notched devices. */}
         <div
-          className="nb-reader-surface absolute inset-x-0 bottom-0 bg-black transition-[top] duration-300"
+          className="nb-reader-surface absolute inset-x-0 bottom-0 transition-[top] duration-300"
           style={{
             // In landscape the page stays full-bleed at top:0 — the floating
             // header carries its own safe-area padding, and the offset used to

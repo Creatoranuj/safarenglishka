@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -24,6 +25,11 @@ public class MainActivity extends BridgeActivity {
     /** Pending callback for an in-flight `<input type="file">` picker. */
     private ValueCallback<Uri[]> filePathCallback;
     private static final int FILE_CHOOSER_REQUEST = 51426;
+    /** Native source of truth for fullscreen reader/player system-bar state. */
+    private volatile boolean immersiveRequested = false;
+    private int statusBarColorBeforeImmersive;
+    private int navigationBarColorBeforeImmersive;
+    private boolean systemBarColorsCaptured = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -104,9 +110,21 @@ public class MainActivity extends BridgeActivity {
 
 
     void enterImmersive() {
+        immersiveRequested = true;
         runOnUiThread(() -> {
             Window window = getWindow();
             if (window == null) return;
+            if (!systemBarColorsCaptured) {
+                statusBarColorBeforeImmersive = window.getStatusBarColor();
+                navigationBarColorBeforeImmersive = window.getNavigationBarColor();
+                systemBarColorsCaptured = true;
+            }
+            // Android may temporarily reveal the status surface for privacy
+            // indicators (for example while the screen recorder uses its mic).
+            // Transparent keeps the reader content behind that system UI and
+            // prevents a separate white band from being painted.
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.BLACK);
             WindowCompat.setDecorFitsSystemWindows(window, false);
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -132,6 +150,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     void exitImmersive() {
+        immersiveRequested = false;
         runOnUiThread(() -> {
             Window window = getWindow();
             if (window == null) return;
@@ -143,6 +162,11 @@ public class MainActivity extends BridgeActivity {
             // edge-to-edge on (the Capacitor default set once in onCreate) and
             // only restoring bar visibility here preserves the insets.
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (systemBarColorsCaptured) {
+                window.setStatusBarColor(statusBarColorBeforeImmersive);
+                window.setNavigationBarColor(navigationBarColorBeforeImmersive);
+                systemBarColorsCaptured = false;
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowInsetsController controller = window.getInsetsController();
                 if (controller != null) {
@@ -153,6 +177,20 @@ public class MainActivity extends BridgeActivity {
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (immersiveRequested) enterImmersive();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Permission/privacy overlays and orientation changes can restore the
+        // bars. Re-hide them only while a reader/player still owns immersive.
+        if (hasFocus && immersiveRequested) enterImmersive();
     }
 
     boolean isTrustedWebViewOrigin() {
