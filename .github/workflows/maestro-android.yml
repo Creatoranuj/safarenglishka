@@ -27,15 +27,26 @@ env:
 
 jobs:
   android-e2e:
-    # macOS runner: hardware acceleration (HAXM/HVF) makes the emulator
-    # bootable in ~3-5 min instead of the 15+ min it takes on Ubuntu (KVM
-    # is not enabled on GitHub-hosted Linux runners).
-    runs-on: macos-14
+    # Ubuntu, not macOS. GitHub-hosted macos-14 runners are Apple Silicon and
+    # do NOT expose the hypervisor to the Android emulator — run #45 died with
+    # "HVF error: HV_UNSUPPORTED" then "Timeout waiting for emulator to boot",
+    # and the x86_64 image on run #44 never started either. GitHub-hosted Linux
+    # runners now ship KVM (enabled by the udev rule below), which is the only
+    # working accelerator for this emulator today.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+
+      - name: 🧩 Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
 
       - uses: actions/setup-node@v5
         with:
@@ -83,14 +94,14 @@ jobs:
         with:
           api-level: 33
           target: google_apis
-          # macos-14 runners are Apple Silicon (arm64). The x86_64 system image
-          # has no accelerator there, so the AVD never came up and every adb
-          # call reported "device 'emulator-5554' not found" until the 
-          # boot timeout (run #44). arm64-v8a is the only bootable arch here.
-          arch: arm64-v8a
+          # x86_64 + KVM on ubuntu-latest. arm64-v8a was tried on macos-14 and
+          # failed with HVF error: HV_UNSUPPORTED (run #45).
+          arch: x86_64
           profile: pixel_5
           disable-animations: true
+          emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+
 
           script: |
             set -e
