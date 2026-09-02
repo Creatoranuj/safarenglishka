@@ -101,7 +101,14 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
-          target: google_apis
+          # google_apis ships the full Google app suite. Run #53's logcat shows
+          # com.google.android.apps.maps:server_recovery_process crash-looping
+          # hundreds of times per second, starving the CPU until our own
+          # MainActivity ANR'd ("Waited 5001ms for FocusEvent") and was force
+          # finished — the flow then ran against the launcher. google_atd is
+          # the stripped Automated Test Device image: Play services, no bundled
+          # Maps/Photos/YouTube, and it is the image Google ships for CI.
+          target: google_atd
           # x86_64 + KVM on ubuntu-latest. arm64-v8a was tried on macos-14 and
           # failed with HVF error: HV_UNSUPPORTED (run #45).
           arch: x86_64
@@ -130,6 +137,8 @@ jobs:
             # so switching Gboard off removes the race without losing input.
             adb shell settings put secure show_ime_with_hard_keyboard 0 || true
             adb shell ime disable com.google.android.inputmethod.latin || true
+            # Belt and braces even on google_atd.
+            adb shell pm disable-user --user 0 com.google.android.apps.maps || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
             # DO NOT `export` here and reference $VAR below: this runner
