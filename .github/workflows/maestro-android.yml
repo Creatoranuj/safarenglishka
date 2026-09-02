@@ -163,22 +163,29 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-boot-timeout: 900
-          # RAM raised to 4GB (runs #49/#50 died on system-wide ANR dialogs
-          # with the landing page already painted behind them). Cores stay at
-          # 2: ubuntu-latest only has 4, and handing the emulator all of them
-          # in run #54 starved the host.
+          # RAM 4GB (runs #49/#50 died on system-wide ANR dialogs with the
+          # landing page already painted behind them). Cores stay at 2:
+          # ubuntu-latest only has 4, and handing the emulator all of them in
+          # run #54 starved the host.
           #
-          # -gpu guest, NOT swiftshader_indirect. Run #59 instrumented the host
-          # and cleared the OOM theory: available memory never fell below
-          # 10.2 GB of 16 GB and `dmesg` listed no oom-kill, yet qemu still
-          # vanished ~95s in ("device 'emulator-5554' not found", then
-          # "could not connect to TCP port 5554: Connection refused"). With the
-          # host healthy, the crash is inside the emulator's own renderer:
-          # swiftshader_indirect translates guest GL on the host process, and
-          # the WebView's compositing right after login is what takes it down.
-          # -gpu guest keeps rasterisation inside the guest, so a renderer
-          # fault can no longer kill the emulator process.
-          emulator-options: -no-window -gpu guest -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -camera-back none -memory 4096 -cores 2
+          # -gpu swiftshader_indirect, NOT -gpu guest.
+          #
+          # Runs #63/#64 died with
+          #   java.io.IOException: Command failed (host:transport:emulator-5554):
+          #   device 'emulator-5554' not found
+          # on Maestro's ADB pool thread — i.e. the qemu PROCESS vanished, not
+          # the driver. The `-gpu guest` switch introduced in run #60 is the
+          # cause, not the cure: `google_atd` is Google's Automated Test Device
+          # image and it ships WITHOUT a guest GPU/graphics stack, so guest-side
+          # rasterisation has nothing to run on. Google documents ATD images as
+          # swiftshader_indirect-only. Pairing ATD with -gpu guest is an
+          # unsupported combination and aborts qemu the moment the WebView
+          # starts compositing — which is exactly ~95s in, right after login.
+          #
+          # The original swiftshader crash is addressed properly below instead,
+          # by taking the WebView off GL entirely (webview-command-line), so the
+          # host renderer never receives the compositing calls that killed it.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-snapshot-save -no-metrics -camera-back none -camera-front none -memory 4096 -cores 2
 
           # NOTE: this runner executes the script under /usr/bin/sh (dash) and
           # each line in its own `sh -c`. Never use `set -o pipefail` (dash
@@ -199,7 +206,26 @@ jobs:
             # so switching Gboard off removes the race without losing input.
             adb shell settings put secure show_ime_with_hard_keyboard 0 || true
             adb shell ime disable com.google.android.inputmethod.latin || true
+
+            # ── THE FIX for "device 'emulator-5554' not found" ──
+            # Chromium reads /data/local/tmp/webview-command-line at WebView
+            # startup (first token is an ignored argv[0] placeholder). Forcing
+            # software rendering means the WebView never issues GL calls, so
+            # the emulator's swiftshader host renderer is never asked to
+            # translate them — removing the exact fault that killed qemu ~95s
+            # into every run. Costs a few fps we do not care about headless.
+            adb shell "echo '_ --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-2d-canvas --in-process-gpu --num-raster-threads=1' > /data/local/tmp/webview-command-line"
+            adb shell chmod 664 /data/local/tmp/webview-command-line || true
+            echo "webview flags: $(adb shell cat /data/local/tmp/webview-command-line)"
+
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+            # Prove the device is actually reachable before Maestro opens its
+            # gRPC session. If qemu already died, fail HERE with a clear
+            # message instead of 90s later inside an ADB pool thread.
+            adb reconnect offline || true
+            adb wait-for-device
+            adb shell getprop sys.boot_completed
 
             # Sample host memory every 5s for the length of the flow. If qemu
             # is being OOM-killed this file shows available memory collapsing
@@ -236,7 +262,7 @@ jobs:
             # ONE LINE. android-emulator-runner executes every script line as
             # its own `sh -c`, so backslash continuations are split apart and
             # die instantly (run #63 failed in 1.4s on exactly that).
-            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml || { echo '--- junit (attempt 1) ---'; cat maestro-report.xml || true; adb shell am force-stop com.safarenglishka.app || true; maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml; }
+            maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml || { echo '--- junit (attempt 1) ---'; cat maestro-report.xml || true; adb reconnect offline || true; adb wait-for-device; adb shell am force-stop com.safarenglishka.app || true; maestro test --env MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}' --env MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}' maestro/smoke.yaml --format junit --output maestro-report.xml; }
 
             echo '--- junit (final) ---'
             cat maestro-report.xml || true

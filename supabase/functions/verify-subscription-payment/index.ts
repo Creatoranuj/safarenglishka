@@ -2,25 +2,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { razorpayFetchWithRetry, razorpayAuthHeader } from "../_shared/razorpayFetch.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const enc = new TextEncoder();
-  const A = enc.encode(a), B = enc.encode(b);
-  let r = 0;
-  for (let i = 0; i < A.length; i++) r |= A[i] ^ B[i];
-  return r === 0;
-}
-
-async function hmacSha256(key: string, data: string): Promise<string> {
-  const enc = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(data));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// Mirrors Razorpay's official `validatePaymentVerification` (razorpay-node).
+// This plan flow bills through a normal Order, so the signed payload is
+// `order_id|payment_id` — NOT the `payment_id|subscription_id` variant.
+import { validatePaymentVerification } from "../_shared/razorpaySignature.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
@@ -57,8 +42,12 @@ Deno.serve(async (req) => {
     const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID')!;
     const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET')!;
 
-    const expected = await hmacSha256(RAZORPAY_KEY_SECRET, `${razorpay_order_id}|${razorpay_payment_id}`);
-    if (!timingSafeEqual(expected, razorpay_signature)) {
+    const signatureValid = await validatePaymentVerification(
+      { order_id: razorpay_order_id, payment_id: razorpay_payment_id },
+      razorpay_signature,
+      RAZORPAY_KEY_SECRET,
+    );
+    if (!signatureValid) {
       return new Response(JSON.stringify({ error: 'Invalid signature' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });

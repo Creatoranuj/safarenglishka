@@ -92,3 +92,24 @@ describe("signed APK smoke regression guards", () => {
     );
   });
 });
+// ── Emulator stability guards (run #63/#64: qemu process death) ──
+describe("maestro workflow emulator configuration", () => {
+  const wf = readFileSync(".github/workflows/maestro-android.yml", "utf8");
+
+  it("never pairs the google_atd image with -gpu guest", () => {
+    // ATD images ship no guest GPU stack; -gpu guest aborts qemu the moment
+    // the WebView composites ("device 'emulator-5554' not found").
+    expect(wf).toContain("target: google_atd");
+    expect(wf).not.toMatch(/emulator-options:.*-gpu guest/);
+    expect(wf).toMatch(/emulator-options:.*-gpu swiftshader_indirect/);
+  });
+
+  it("forces the WebView onto software rendering", () => {
+    expect(wf).toContain("/data/local/tmp/webview-command-line");
+    expect(wf).toContain("--disable-gpu-compositing");
+  });
+
+  it("checks the device is alive before and between Maestro attempts", () => {
+    expect(wf.match(/adb wait-for-device/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+});

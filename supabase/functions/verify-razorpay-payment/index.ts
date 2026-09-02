@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { razorpayFetchWithRetry, razorpayAuthHeader } from "../_shared/razorpayFetch.ts";
+import { validatePaymentVerification } from "../_shared/razorpaySignature.ts";
 
 
 // Rate limiting is enforced via Postgres `public.check_rate_limit`
@@ -12,30 +13,9 @@ const RATE_LIMIT_WINDOW_SECONDS = 60;
 const RATE_LIMIT_MAX = 5;
 
 
-// Timing-safe string comparison to prevent timing attacks
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  let result = 0;
-  for (let i = 0; i < bufA.length; i++) {
-    result |= bufA[i] ^ bufB[i];
-  }
-  return result === 0;
-}
-
-async function hmacSha256(key: string, data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(key);
-  const msgData = encoder.encode(data);
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
-  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// Signature primitives live in _shared/razorpaySignature.ts, which mirrors
+// Razorpay's own SDK helpers (validatePaymentVerification). Do not re-inline
+// a local copy — four divergent copies is how one of them ends up unpatched.
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
@@ -119,12 +99,13 @@ Deno.serve(async (req) => {
     }
 
     // Verify HMAC-SHA256 signature with timing-safe comparison
-    const expectedSignature = await hmacSha256(
+    const signatureValid = await validatePaymentVerification(
+      { order_id: razorpay_order_id, payment_id: razorpay_payment_id },
+      razorpay_signature,
       RAZORPAY_KEY_SECRET,
-      `${razorpay_order_id}|${razorpay_payment_id}`
     );
 
-    if (!timingSafeEqual(expectedSignature, razorpay_signature)) {
+    if (!signatureValid) {
       // Structured forensic log — never include the signature value itself
       console.error('Razorpay signature mismatch', {
         user_id: user.id,

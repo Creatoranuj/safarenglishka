@@ -1,32 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+// Mirrors Razorpay's official `validateWebhookSignature` (razorpay-node).
+// HMAC is computed over the RAW body text — never a re-serialised object.
+import { validateWebhookSignature } from "../_shared/razorpaySignature.ts";
 
 // No CORS headers — this is a server-to-server webhook endpoint
 const jsonHeaders = { 'Content-Type': 'application/json' };
-
-async function hmacSha256(key: string, data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(key);
-  const msgData = encoder.encode(data);
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
-  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  let result = 0;
-  for (let i = 0; i < bufA.length; i++) {
-    result |= bufA[i] ^ bufB[i];
-  }
-  return result === 0;
-}
 
 function getSupabaseAdmin() {
   return createClient(
@@ -87,9 +66,9 @@ Deno.serve(async (req) => {
     const supabaseAdmin = getSupabaseAdmin();
 
     // Verify HMAC-SHA256 with timing-safe comparison
-    const expectedSignature = await hmacSha256(WEBHOOK_SECRET, rawBody);
+    const signatureValid = await validateWebhookSignature(rawBody, razorpaySignature, WEBHOOK_SECRET);
 
-    if (!timingSafeEqual(expectedSignature, razorpaySignature)) {
+    if (!signatureValid) {
       console.error('Webhook signature mismatch — possible tampering attempt');
       await logSecurityAlert(supabaseAdmin, 'webhook_signature_mismatch', {
         webhook: 'razorpay-webhook',
