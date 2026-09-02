@@ -36,17 +36,29 @@ androidWebViewHierarchy: devtools
 
 # 3) Profile. Run #61 proved DOM ids are not exposed in the hierarchy the
 # driver actually uses, so every id matcher gets a text fallback. Both rungs
-# are optional; the assertion below is page-body-only copy, so a missed tap
+# are optional; the assertions below are page-body-only copy, so a missed tap
 # still fails loud (run #55's bug was asserting on the nav label instead).
+#
+# Run #65 failed here for 20s with NO signal about why: the header rendered
+# but the body never did, because Profile.tsx sat on its skeleton forever
+# when the auth profile cache was empty. The page now always resolves to
+# loaded-or-error, so the gate is split into two steps that name the cause:
+#   A — did the page resolve at all?  (nav / render)
+#   B — did it resolve to real data?  (profile fetch)
 - tapOn:
     id: "bottom-nav-profile"
     optional: true
 - tapOn:
     text: "^Profile$"
     optional: true
+# A) Failing HERE means nav or render, not data.
 - extendedWaitUntil:
-    visible: "Personal Information|Sign Out|Account Settings"
+    visible: "Personal Information|Sign Out|Account Settings|Profile Unavailable"
     timeout: 20000
+# B) Failing HERE means the profile fetch returned nothing for the test
+#    account — check the `profiles` row, not the emulator.
+- assertNotVisible: "Profile Unavailable"
+- assertVisible: "Personal Information|Sign Out"
 
 # 4) Settings → Delete Account (Play Store account-deletion policy)
 - tapOn:
