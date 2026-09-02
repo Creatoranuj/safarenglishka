@@ -1,12 +1,14 @@
 name: Maestro Android E2E
 
 # Real-device-style end-to-end smoke on an Android emulator using Maestro.
-# Manual-dispatch only (emulator boots are slow ~10-15 min) plus optional
-# nightly cron. Builds a debug APK, boots an emulator, installs the APK,
-# then runs the split gates in `maestro/`.
+# Manual dispatch only. The nightly cron was removed: shared-runner qemu dies
+# mid-flow often enough (runs #54-#65) that a scheduled run mostly produced
+# infra noise nobody triaged, and a red badge people learned to ignore is
+# worse than no badge. Run it on demand before a release.
 #
 # Requires GitHub repo secrets (already configured):
-#   MAESTRO_EMAIL, MAESTRO_PASSWORD
+#   MAESTRO_EMAIL, MAESTRO_PASSWORD  — dedicated STUDENT account, never admin
+#                                      (this job uploads screenshots + hierarchies)
 #
 # Flow order (see maestro/smoke.yaml — it is only a composition):
 #   login.yaml (gate) -> nav.yaml (gate) -> pdf-back / back-button (advisory)
@@ -18,9 +20,6 @@ on:
         description: 'Fail the job when the smoke gates fail'
         type: boolean
         default: true
-  schedule:
-    # Nightly 04:30 UTC — off-peak so it doesn't fight with release builds
-    - cron: '30 4 * * *'
 
 concurrency:
   group: maestro-${{ github.ref }}
