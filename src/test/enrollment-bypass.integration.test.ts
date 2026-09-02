@@ -25,12 +25,41 @@ runIf("enrollment bypass — red team", () => {
 
   it("blocks direct INSERT into a paid course", async () => {
     const { data: { user } } = await supabase.auth.getUser();
+
+    // The unique (user_id, course_id) index fires BEFORE RLS is evaluated, so
+    // if the CI user happens to already have a row for TEST_PAID_COURSE_ID the
+    // insert fails with "duplicate key" and never proves anything about RLS.
+    // Pick a paid course the user is not enrolled in so the RLS policy is the
+    // thing actually under test.
+    const { data: mine } = await supabase.from("enrollments")
+      .select("course_id").eq("user_id", user!.id);
+    const enrolled = new Set((mine ?? []).map((r) => Number(r.course_id)));
+
+    let targetCourseId = PAID_COURSE_ID;
+    if (enrolled.has(PAID_COURSE_ID)) {
+      const { data: paidCourses } = await supabase.from("courses")
+        .select("id, price").gt("price", 0).limit(50);
+      const free = (paidCourses ?? [])
+        .map((c) => Number(c.id))
+        .find((id) => !enrolled.has(id));
+      if (free === undefined) {
+        // No un-enrolled paid course exists — the probe cannot be meaningful.
+        // Fail loudly rather than reporting a false green.
+        throw new Error(
+          "enrollment-bypass: CI user is enrolled in every paid course; " +
+          "set TEST_PAID_COURSE_ID to a course the user is NOT enrolled in.",
+        );
+      }
+      targetCourseId = free;
+    }
+
     const { error } = await supabase.from("enrollments").insert({
-      user_id: user!.id, course_id: PAID_COURSE_ID, status: "active",
+      user_id: user!.id, course_id: targetCourseId, status: "active",
     });
     expect(error).not.toBeNull();
     expect(error!.message.toLowerCase()).toMatch(/row-level security|policy/);
   });
+
 
   it("blocks status flip from cancelled -> active", async () => {
     const { data: { user } } = await supabase.auth.getUser();

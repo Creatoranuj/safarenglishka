@@ -180,7 +180,10 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    // MUST stay `public` — BridgeActivity.onResume() is public, and Java
+    // forbids weakening access on an override. A `protected` override broke
+    // the v1.1.1 release build (:app:compileReleaseJavaWithJavac).
+    public void onResume() {
         super.onResume();
         if (immersiveRequested) enterImmersive();
     }
