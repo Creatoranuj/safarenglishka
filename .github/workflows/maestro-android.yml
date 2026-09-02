@@ -108,14 +108,25 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-
+          # -memory/-cores raised from the 2048MB/2-core default: runs #49 and
+          # #50 both died on system-wide ANR dialogs ("Safar English isn't
+          # responding", then "Pixel Launcher isn't responding") while the
+          # landing page was already painted behind them. The emulator was
+          # simply starved on a software GPU.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 6144 -cores 4
 
           script: |
             set -e
+            # Suppress ANR/crash dialogs at the OS level. Tapping "Wait" from
+            # the flow is not enough — the dialog reappears for whichever
+            # process stalls next, and any dialog makes every text assertion
+            # in the flow false (runs #49/#50).
+            adb shell settings put global hide_error_dialogs 1
+            adb shell settings put secure anr_show_background 0 || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             export MAESTRO_EMAIL='${{ secrets.MAESTRO_EMAIL }}'
             export MAESTRO_PASSWORD='${{ secrets.MAESTRO_PASSWORD }}'
+
             # Smoke is the gate — it must fail the job when it fails. The
             # previous `|| echo "smoke failed"` swallowed real regressions and
             # let the job report green while login/dashboard were broken.
