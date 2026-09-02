@@ -228,11 +228,29 @@ jobs:
             # the emulator's swiftshader host renderer is never asked to
             # translate them — removing the exact fault that killed qemu ~~95s
             # into every run. Costs a few fps we do not care about headless.
-            adb shell "echo '_ --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-2d-canvas --in-process-gpu --num-raster-threads=1' > /data/local/tmp/webview-command-line"
+            # Run #72 survived the full 8 minutes (no qemu death) but every
+            # screenshot was pure black and the devtools hierarchy empty, so the
+            # renderer fix worked and the *compositor* is now the problem.
+            # `--in-process-gpu` + `--num-raster-threads=1` are the two flags
+            # known to hand back a black SurfaceView on swiftshader; drop them
+            # and keep only the GL-avoidance flags.
+            adb shell "echo '_ --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-2d-canvas' > /data/local/tmp/webview-command-line"
             adb shell chmod 664 /data/local/tmp/webview-command-line || true
             echo "webview flags: $(adb shell cat /data/local/tmp/webview-command-line)"
 
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+            # First-paint probe. Cheap (one cold launch) and it is the only way
+            # to tell "WebView painted nothing" from "the app crashed on boot" —
+            # run #72's black screenshot is ambiguous without logcat.
+            adb logcat -c || true
+            adb shell am start -n com.safarenglishka.app/.MainActivity || true
+            sleep 25
+            adb exec-out screencap -p > "$HOME/first-launch.png" || true
+            adb logcat -d -v time > "$HOME/logcat-first-launch.txt" 2>&1 || true
+            echo "--- chromium/app lines ---"
+            grep -iE "chromium|cr_|capacitor|safarenglishka|FATAL|AndroidRuntime" "$HOME/logcat-first-launch.txt" | tail -60 || true
+            adb shell am force-stop com.safarenglishka.app || true
 
 
             # Prove the device is actually reachable before Maestro opens its
@@ -305,7 +323,8 @@ jobs:
             maestro-report.xml
             ~/host-mem.log
             ~/hierarchy-final.txt
-
+            ~/first-launch.png
+            ~/logcat-first-launch.txt
             ~/.maestro/tests/**/*
           retention-days: 14
           if-no-files-found: ignore
