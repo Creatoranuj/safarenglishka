@@ -128,6 +128,9 @@ interface Props {
   noteId?: string | null;
   /** Pre-arm reading mode when opening the reader (e.g. from a "Reading" shortcut). */
   defaultReadingMode?: "off" | "theme" | "focus";
+  /** Stable per-document id for autoscroll (per-note speed + auto-resume).
+   *  Omit it and one is derived from noteId / lessonId / courseId / title. */
+  docKey?: string;
 }
 
 /**
@@ -136,8 +139,19 @@ interface Props {
  * When `lessonId`/`courseId`/`noteId` is supplied, the reader becomes
  * editable and includes an inline title rename control.
  */
-export default function SmartNotesReader({ markdown, title, onBack, onDownload, onOpenLink, lessonId, courseId, noteId, defaultReadingMode }: Props) {
+export default function SmartNotesReader({ markdown, title, onBack, onDownload, onOpenLink, lessonId, courseId, noteId, defaultReadingMode, docKey }: Props) {
   const isEditable = !!(lessonId || courseId || noteId);
+  /**
+   * Autoscroll identity. Same convention everywhere a note can be opened
+   * (lesson sheet, library) so speed/resume follow the note, not the screen.
+   */
+  const autoScrollKey = useMemo(() => {
+    if (docKey) return docKey;
+    if (noteId) return `note:${noteId}`;
+    if (lessonId) return `lesson-notes:${lessonId}`;
+    if (courseId) return `course-notes:${courseId}`;
+    return `md:${title || "smart-notes"}`;
+  }, [docKey, noteId, lessonId, courseId, title]);
   const { note, loading: noteLoading, saving: noteSaving, save: saveNote, scheduleAutoSave } = useSmartNote({
     lessonId, courseId, noteId, defaultTitle: title,
   });
@@ -390,6 +404,7 @@ export default function SmartNotesReader({ markdown, title, onBack, onDownload, 
       {/* AutoScroll FAB */}
       <AutoScrollFab
         targetRef={targetRef}
+        docKey={autoScrollKey}
         bottomOffset={96}
         onActiveChange={(a) => {
           setAutoScrollActive(a);
