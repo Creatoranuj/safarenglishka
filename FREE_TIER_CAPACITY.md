@@ -186,3 +186,39 @@ Top tables (`pg_total_relation_size`):
 ---
 
 *Used the supabase-architect-auditor, senior-architect-audit and app-crash-shield skills.*
+
+---
+
+## Addendum 2 — R2 jugaad IMPLEMENTED (2026-09-03)
+
+Code ab R2-ready hai; sirf 5 secrets set karne hain (one-time, Cloudflare dashboard, free):
+
+1. Cloudflare account → R2 → bucket `safar-pdfs` (public access ON, ya custom domain).
+2. R2 → Manage API tokens → token banao.
+3. Supabase → Edge Functions → Secrets me set karo:
+   `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+   `R2_BUCKET=safar-pdfs`, `R2_PUBLIC_URL=<bucket public URL>`
+4. `pdf-proxy` aur `r2-upload` functions redeploy.
+
+**Kya badla:**
+- `pdf-proxy`: cache-hit pehle R2 pe check (302 → R2 public URL, $0 egress);
+  miss pe Drive se tee-stream → R2 me store (128 MB cap). R2 secrets na hon
+  to purana Supabase pdf-cache flow chalta rahega — koi breaking change nahi.
+- Naya `r2-upload` function: admin/teacher PDF seedha R2 pe upload, random
+  unguessable key, magic-byte (`%PDF-`) validation, 100 MB cap, staff-only.
+- R2 public host `kind=url` allowlist me auto-add — admin R2 URL kisi bhi
+  PDF field me paste kar sakta hai, enrollment gate waisa hi rahega.
+
+**Security (red-team pass):** staff-only role check, magic bytes (polyglot
+`.html`/`.svg` blocked), path traversal impossible (filename sanitized +
+random prefix), SSRF allowlist unchanged. Accepted risk: direct R2 link
+share ho sakta hai — wahi model jo jsDelivr PDFs ka pehle se hai.
+
+**Egress diet (is patch me):** `Course.tsx` lessons query ab sirf 8 zaroori
+columns + `limit(500)` (pehle `select('*')`, 27 columns × saare lessons);
+discussion comments pe `limit(200)`; Admin CSV export blob URL ab revoke hota
+hai (repeat-export memory leak band).
+
+**Verdict update:** R2 secrets set hote hi Drive quota risk ≈ khatam aur
+Supabase egress pressure ~0. Capacity ceiling phir bhi ~700–800 MAU hi rahegi
+(concurrency wall wahi hai) — par ab **PDF side kabhi bottleneck nahi banegi.**
