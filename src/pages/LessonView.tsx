@@ -51,6 +51,7 @@ import { useLessonPdfs } from "../hooks/useLessonPdfs";
 import { useLessonAttachments } from "../hooks/useLessonAttachments";
 import { useLessonProgress } from "../hooks/useLessonProgress";
 import { AttachmentRow } from "../components/lesson/AttachmentRow";
+import EyeIcon from "../components/common/EyeIcon";
 import { useDownloads } from "../hooks/useDownloads";
 import { useScreenProtection } from "../hooks/useScreenProtection";
 import { useWebScreenshotShield } from "../hooks/useWebScreenshotShield";
@@ -2442,27 +2443,48 @@ const LessonView = () => {
                                     >
                                       <div className="space-y-1 pl-2">
                                         {currentLesson?.class_pdf_url && (
-                                          <button
-                                            onClick={() => void openPdfItem({ id: 'class-pdf', file_name: `${currentLesson.title} : Class Notes`, file_url: currentLesson.class_pdf_url! })}
-                                            className="flex items-center gap-3 py-2.5 w-full text-left hover:bg-accent/10 active:bg-accent/20 active:scale-[0.99] rounded-md px-2 transition-all duration-150 ease-out"
-                                          >
-                                            <div className="h-7 w-7 rounded-md bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                                              <FileText className="h-3.5 w-3.5 text-destructive" />
-                                            </div>
-                                            <p className="flex-1 min-w-0 text-[15px] text-foreground truncate">{currentLesson.title} : Class Notes</p>
-                                          </button>
+                                          <div className="flex items-center gap-1 rounded-md hover:bg-accent/10 transition-colors">
+                                            <button
+                                              onClick={() => void openPdfItem({ id: 'class-pdf', file_name: `${currentLesson.title} : Class Notes`, file_url: currentLesson.class_pdf_url! })}
+                                              className="flex items-center gap-3 flex-1 min-w-0 py-2.5 text-left active:scale-[0.99] px-2 transition-all duration-150 ease-out"
+                                            >
+                                              <div className="h-7 w-7 rounded-md bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                                                <FileText className="h-3.5 w-3.5 text-destructive" />
+                                              </div>
+                                              <p className="flex-1 min-w-0 text-[15px] text-foreground truncate">{currentLesson.title} : Class Notes</p>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => { e.stopPropagation(); void openPdfItem({ id: 'class-pdf', file_name: `${currentLesson.title} : Class Notes`, file_url: currentLesson.class_pdf_url! }, { immersive: true }); }}
+                                              aria-label={`Open full page: ${currentLesson.title} : Class Notes`}
+                                              title="Full page"
+                                              className="shrink-0 mr-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all"
+                                            >
+                                              <EyeIcon className="h-[18px] w-[18px]" />
+                                            </button>
+                                          </div>
                                         )}
                                         {lessonPdfs.map((pdf) => (
-                                          <button
-                                            key={pdf.id}
-                                            onClick={() => void openPdfItem({ id: pdf.id, file_name: pdf.file_name, file_url: pdf.file_url })}
-                                            className="flex items-center gap-3 py-2.5 w-full text-left hover:bg-accent/10 active:bg-accent/20 active:scale-[0.99] rounded-md px-2 transition-all duration-150 ease-out"
-                                          >
-                                            <div className="h-7 w-7 rounded-md bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                                              <FileText className="h-3.5 w-3.5 text-destructive" />
-                                            </div>
-                                            <p className="flex-1 min-w-0 text-[15px] text-foreground truncate">{pdf.file_name}</p>
-                                          </button>
+                                          <div key={pdf.id} className="flex items-center gap-1 rounded-md hover:bg-accent/10 transition-colors">
+                                            <button
+                                              onClick={() => void openPdfItem({ id: pdf.id, file_name: pdf.file_name, file_url: pdf.file_url })}
+                                              className="flex items-center gap-3 flex-1 min-w-0 py-2.5 text-left active:scale-[0.99] px-2 transition-all duration-150 ease-out"
+                                            >
+                                              <div className="h-7 w-7 rounded-md bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                                                <FileText className="h-3.5 w-3.5 text-destructive" />
+                                              </div>
+                                              <p className="flex-1 min-w-0 text-[15px] text-foreground truncate">{pdf.file_name}</p>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => { e.stopPropagation(); void openPdfItem({ id: pdf.id, file_name: pdf.file_name, file_url: pdf.file_url }, { immersive: true }); }}
+                                              aria-label={`Open full page: ${pdf.file_name}`}
+                                              title="Full page"
+                                              className="shrink-0 mr-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all"
+                                            >
+                                              <EyeIcon className="h-[18px] w-[18px]" />
+                                            </button>
+                                          </div>
                                         ))}
                                       </div>
                                     </div>

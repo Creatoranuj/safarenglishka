@@ -298,9 +298,49 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     });
   }, [docKey]);
 
+  const canScroll = (node: HTMLElement | null): node is HTMLElement =>
+    !!node && node.scrollHeight - node.clientHeight > 2;
+
+  /**
+   * Resolve the element that actually scrolls.
+   *
+   * Smart Notes and the inline PDF block hand us a *wrapper*: the real
+   * scroller is either a child that mounts later (markdown body, pdf pages
+   * container) or — for blocks that simply grow with the lesson page — the
+   * document scroller itself. Binding blindly to the wrapper is why
+   * autoscroll looked dead on those two surfaces: the loop measured
+   * `scrollHeight - clientHeight === 0` and stopped on frame one.
+   */
+  const resolveTarget = (): HTMLElement | null => {
+    if (typeof document === "undefined") return null;
+    const rawEl = targetRef?.current ?? null;
+    if (canScroll(rawEl)) return rawEl;
+    if (rawEl) {
+      // 1) a scrollable descendant that mounted after the FAB did
+      const inner = Array.from(
+        rawEl.querySelectorAll<HTMLElement>(
+          "[data-scroll-host], .nb-reader-surface, .markdown-body, .overflow-y-auto, .overflow-auto",
+        ),
+      ).find(canScroll);
+      if (inner) return inner;
+      // 2) nearest scrollable ancestor (reader shells wrap the content)
+      let node: HTMLElement | null = rawEl.parentElement;
+      while (node && node !== document.body && node !== document.documentElement) {
+        if (canScroll(node)) return node;
+        node = node.parentElement;
+      }
+    }
+    // 3) the page itself — inline Smart Notes / inline PDF inside a normal
+    //    (non-overflow) lesson section scroll the document, not a box.
+    const doc = (document.scrollingElement ?? document.documentElement) as HTMLElement | null;
+    if (canScroll(doc)) return doc;
+    return null;
+  };
+
+
   /** Jump the reader back to the very top (page 1). Keeps autoscroll running. */
   const scrollToTop = useCallback(() => {
-    const el = targetRef?.current ?? null;
+    const el = resolveTarget();
     const ifr = iframeRef?.current ?? null;
     dwellUntilRef.current = 0;
     dwellPageRef.current = null;
@@ -371,13 +411,18 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     routeIdxRef.current = 0;
     routeStopRef.current = 0;
 
-    const el = targetRef?.current ?? null;
     const ifr = iframeRef?.current ?? null;
     // A wrapper div that merely *contains* an iframe reports no scroll range.
     // Previously we still picked it and the loop stopped on the first frame
     // ("atEnd"), which is the main reason autoscroll looked dead on PDFs.
-    const elScrollable = !!el && el.scrollHeight - el.clientHeight > 2;
-    const useEl = !!el && (elScrollable || !ifr);
+    const el = resolveTarget();
+    const elScrollable = canScroll(el);
+    // When a cross-origin viewer iframe is present, never fall back to the
+    // page scroller — scrolling the lesson page instead of the PDF is worse
+    // than using the iframe keystroke bridge.
+    const isDocFallback =
+      !!el && el === (document.scrollingElement ?? document.documentElement);
+    const useEl = !!el && elScrollable && !(ifr && isDocFallback);
     if (useEl && el) {
       // Same-origin: smooth pixel scroll. speed = px per 16.67ms (60fps baseline).
       // `scroll-behavior: smooth` (set globally on <html> and on some readers)
@@ -708,8 +753,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     let tries = 0;
     const id = window.setInterval(() => {
       if (resumedRef.current || ++tries > 25) { window.clearInterval(id); return; }
-      const el = targetRef?.current;
-      const ready = (!!el && el.scrollHeight - el.clientHeight > 2) || !!iframeRef?.current;
+      const ready = !!resolveTarget() || !!iframeRef?.current;
       if (!ready) return;
       window.clearInterval(id);
       resumedRef.current = true;
