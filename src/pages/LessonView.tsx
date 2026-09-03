@@ -142,6 +142,13 @@ const LessonView = () => {
   
   // Access Control
   const [hasPurchased, setHasPurchased] = useState(false);
+  /** True only once the NETWORK enrollment answer (get_course_bundle) has
+   *  landed. The cached bundle unblocks the UI instantly with a possibly
+   *  stale `hasPurchased: false`, and the enrollment guard below used to fire
+   *  on that cached value — bouncing enrolled students to /buy-course, which
+   *  then redirected them to /my-courses with an "already enrolled" toast.
+   *  Gate the guard on the fresh answer instead. */
+  const [accessResolved, setAccessResolved] = useState(false);
   
   // Notes state (local storage based for persistence)
   const [noteContent, setNoteContent] = useState("");
@@ -1330,6 +1337,7 @@ const LessonView = () => {
     if (!courseId) return;
 
     let cancelled = false;
+    setAccessResolved(false);
     const controller = new AbortController();
     const signal = controller.signal;
     const aliveRef = isMountedRef; // alias for read-clarity below
@@ -1397,7 +1405,8 @@ const LessonView = () => {
         };
 
         const enrolled = !!b.is_enrolled;
-        if (enrolled) setHasPurchased(true);
+        setHasPurchased((prev) => prev || enrolled);
+        setAccessResolved(true);
         if (!b.course) throw new Error('Course not found');
 
         setCourse(b.course);
@@ -1485,11 +1494,11 @@ const LessonView = () => {
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {
-    if (!loading && !hasPurchased && !isAdminOrTeacher && courseId && user) {
+    if (accessResolved && !hasPurchased && !isAdminOrTeacher && courseId && user) {
       toast.error("Please purchase this course to access lessons.");
       navigate(`/buy-course?id=${courseId}`, { replace: true });
     }
-  }, [loading, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
+  }, [accessResolved, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
 
   // Refetch comments when lesson changes
   useEffect(() => {
@@ -2471,6 +2480,7 @@ const LessonView = () => {
                                           key={att.id}
                                           attachment={att}
                                           onOpenPdf={(url, fileName) => void openPdfItem({ id: att.id, file_name: fileName, file_url: url })}
+                                          onOpenPdfFull={(url, fileName) => void openPdfItem({ id: att.id, file_name: fileName, file_url: url }, { immersive: true })}
                                           resolveUrl={() => getAttachmentUrl(att)}
                                           onDownloaded={(title, url, filename, kind) => addDownload(title, url, filename, kind)}
                                         />
