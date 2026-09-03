@@ -154,7 +154,11 @@ const ChapterView = () => {
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {
-    if (loading || !courseId || !user) return;
+    // NOTE: deliberately NOT gated on `loading` — this guard does its own
+    // fresh enrollment query, and gating on a cache-warmed `loading=false`
+    // is exactly what bounced enrolled students in LectureListing.
+    if (!courseId || !user) return;
+    let cancelled = false;
     const checkEnrollment = async () => {
       if (isAdminOrTeacher) return;
       const { data: enrollment } = await supabase
@@ -164,13 +168,14 @@ const ChapterView = () => {
         .eq("course_id", Number(courseId))
         .eq("status", "active")
         .maybeSingle();
-      if (!enrollment) {
+      if (!enrollment && !cancelled) {
         toast.error("Please purchase this course to access content.");
         navigate(`/buy-course?id=${courseId}`, { replace: true });
       }
     };
     checkEnrollment();
-  }, [loading, courseId, user, isAdminOrTeacher, navigate]);
+    return () => { cancelled = true; };
+  }, [courseId, user, isAdminOrTeacher, navigate]);
 
   if (loading && !fetched) {
     return <LoadingSpinner fullPage size="lg" text="Chapter load ho raha hai…" />;
