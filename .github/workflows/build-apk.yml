@@ -134,6 +134,13 @@ jobs:
             APP_VERSION_NAME="1.0.${GITHUB_RUN_NUMBER:-0}"
           fi
           echo "APP_VERSION_NAME=${APP_VERSION_NAME}" >> $GITHUB_ENV
+          # OBS — ONE release identifier shared by (a) the JS bundle baked
+          # via VITE_SENTRY_RELEASE, (b) the sourcemap upload, and (c) the
+          # ProGuard mapping upload. These used to drift (the bundle tagged
+          # itself `+<sha7>` while sentry-cli created `+<run_number>`), so
+          # Sentry never matched an event to its artifacts and every stack
+          # trace stayed minified. Do NOT compute this anywhere else.
+          echo "SENTRY_RELEASE=com.safarenglishka.app@${APP_VERSION_NAME}+${GITHUB_RUN_NUMBER:-0}" >> $GITHUB_ENV
           # Guard: on a real vX.Y.Z tag, versionName MUST equal the tag.
           if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "v$APP_VERSION_NAME" != "$VERSION" ]]; then
             echo "❌ tag/versionName mismatch: tag=$VERSION, versionName=$APP_VERSION_NAME"
@@ -256,6 +263,9 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          # Must equal the release sentry-cli creates below, or events and
+          # artifacts land on two different releases.
+          VITE_SENTRY_RELEASE: ${{ env.SENTRY_RELEASE }}
           # When QA toggle is ON, bake Eruda (in-app DevTools) into the bundle.
           # Floating button appears in the app → tap → console/network/storage
           # visible on the phone itself. No laptop / USB needed.
@@ -336,6 +346,47 @@ jobs:
           fi
           echo "✅ JS bundle-size gate passed"
 
+      - name: 🗺️ Upload JS sourcemaps to Sentry, then strip them from dist
+        # CRITICAL (size + source leak). `build.sourcemap: "hidden"` in
+        # vite.config.ts emits ~30MB of .map files into dist/. Nothing ever
+        # consumed them: they were never uploaded to Sentry, but `cap copy`
+        # DID copy them into android/app/src/main/assets/public and `zip -r`
+        # DID put them in the OTA bundle. Net effect was a ~30MB APK/OTA
+        # penalty plus full readable source shipped to every device.
+        #
+        # This step closes both holes at once: upload (so JS stack traces
+        # symbolicate — the WebView is where our real crashes live) and then
+        # delete, so no .map ever reaches a device.
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_RELEASE: ${{ env.SENTRY_RELEASE }}
+        run: |
+          set -eu
+          MAP_COUNT="$(find dist -name '*.map' | wc -l | tr -d ' ')"
+          MAP_KB="$(find dist -name '*.map' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END{printf "%d", (s/1024)+0.5}')"
+          echo "Found ${MAP_COUNT} sourcemaps (${MAP_KB} KB) in dist/"
+
+          if [ -z "${SENTRY_AUTH_TOKEN}" ] || [ -z "${SENTRY_ORG}" ] || [ -z "${SENTRY_PROJECT}" ]; then
+            echo "::notice::Sentry secrets not configured — skipping sourcemap upload (maps are still stripped below)."
+          elif [ "$MAP_COUNT" = "0" ]; then
+            echo "::notice::No sourcemaps emitted — nothing to upload."
+          else
+            curl -sL https://sentry.io/get-cli/ | bash
+            sentry-cli releases new "$SENTRY_RELEASE" || true
+            sentry-cli sourcemaps inject dist
+            sentry-cli sourcemaps upload --release "$SENTRY_RELEASE" dist
+            echo "✅ Uploaded ${MAP_COUNT} sourcemaps to release $SENTRY_RELEASE"
+          fi
+
+          # Strip unconditionally — even when the upload was skipped, shipping
+          # maps to devices is never correct.
+          find dist -name '*.map' -delete
+          echo "🧹 Stripped ${MAP_COUNT} sourcemaps (${MAP_KB} KB) from dist/ before packaging"
+          echo "- **Sourcemaps:** ${MAP_COUNT} uploaded/stripped (${MAP_KB} KB saved in APK + OTA)" >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist
+
       - name: 📦 Zip web bundle for OTA live updates
         run: |
           cd dist && zip -rq ../web-bundle.zip . && cd ..
@@ -407,6 +458,14 @@ jobs:
           ./node_modules/.bin/cap update android
           test -f android/app/src/main/assets/public/index.html
           test -f android/app/src/main/assets/public/nb-build.json
+          # Regression guard for the 30MB sourcemap leak — see the
+          # "Upload JS sourcemaps" step above. If this ever fires, something
+          # re-emitted or restored .map files after the strip.
+          LEAKED="$(find android/app/src/main/assets/public -name '*.map' | wc -l | tr -d ' ')"
+          if [ "$LEAKED" != "0" ]; then
+            echo "::error::${LEAKED} sourcemap(s) leaked into APK assets — source code would ship to users."
+            exit 1
+          fi
           grep -q "${{ github.sha }}" android/app/src/main/assets/public/nb-build.json
         env:
           CAP_DEBUG: ${{ inputs.debug_webview == 'true' && '1' || '0' }}
@@ -751,7 +810,7 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-          SENTRY_RELEASE: com.safarenglishka.app@${{ env.APP_VERSION_NAME }}+${{ github.run_number }}
+          SENTRY_RELEASE: ${{ env.SENTRY_RELEASE }}
         run: |
           set -euo pipefail
           if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
