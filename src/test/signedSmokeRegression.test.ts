@@ -20,7 +20,10 @@ describe("signed APK smoke regression guards", () => {
     expect(nav).not.toContain("visible: ${MAESTRO_EMAIL}");
     // "Profile" alone is the bottom-nav label and stays visible even when the
     // tab never opened, so the assertion must be built from page-body copy.
-    expect(nav).toContain('visible: "Personal Information|Sign Out|Account Settings"');
+    // Alternation list, order-independent: nav.yaml also accepts the
+    // "Profile Unavailable" error card, because a profile fetch failure is a
+    // rendered Profile page — the tab DID open, which is what this gate checks.
+    expect(nav).toMatch(/visible: "[^"]*Personal Information[^"]*Sign Out[^"]*"/);
     // Every id matcher needs a text fallback: run #61 proved the driver does
     // not expose DOM ids, so an id-only tap silently misses the tab.
     expect(nav).toContain('id: "bottom-nav-profile"');
@@ -104,9 +107,16 @@ describe("maestro workflow emulator configuration", () => {
     expect(wf).toMatch(/emulator-options:.*-gpu swiftshader_indirect/);
   });
 
-  it("forces the WebView onto software rendering", () => {
+  it("does not re-add the WebView GPU command-line override", () => {
+    // Runs #74-#76: `--disable-gpu-compositing` / rasterization overrides in
+    // /data/local/tmp/webview-command-line made libwebviewchromium.so
+    // (101.0.4951.61, google_atd API 33) abort with `Fatal signal 5 (SIGTRAP)`
+    // before the first frame — black screenshots, empty view hierarchy.
+    // The override was removed on purpose; the workflow only cleans up any
+    // leftover file. Do not reintroduce the flags.
     expect(wf).toContain("/data/local/tmp/webview-command-line");
-    expect(wf).toContain("--disable-gpu-compositing");
+    expect(wf).not.toContain("--disable-gpu-compositing");
+    expect(wf).not.toContain("--disable-gpu-rasterization");
   });
 
   it("checks the device is alive before and between Maestro attempts", () => {
