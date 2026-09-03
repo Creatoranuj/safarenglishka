@@ -202,6 +202,8 @@ function LazyPage({
   smartFit = false,
   releaseWhenDistant = false,
   pixelRatio,
+  estimateRatio,
+  onRatio,
 }: {
   pageNumber: number;
   width: number;
@@ -212,6 +214,10 @@ function LazyPage({
   releaseWhenDistant?: boolean;
   /** Clamped canvas DPR — keeps bitmap bytes bounded while zoomed in. */
   pixelRatio?: number;
+  /** Best known height/width ratio for this page (measured, or doc average). */
+  estimateRatio: (page: number) => number;
+  /** Reports the real ratio once pdf.js has the page viewport. */
+  onRatio: (page: number, ratio: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const render = usePageSlotVisibility({
@@ -221,7 +227,7 @@ function LazyPage({
     releaseWhenDistant,
     onVisible,
   });
-  const [pageRatio, setPageRatio] = useState(1.414);
+  const [pageRatio, setPageRatio] = useState(() => estimateRatio(pageNumber));
   const placeholderHeight = Math.round(width * pageRatio);
   const [fit, setFit] = useState<ContentFit | null>(null);
 
@@ -232,7 +238,13 @@ function LazyPage({
     (page: unknown) => {
       const loadedPage = page as { getViewport: (options: { scale: number }) => { width: number; height: number } };
       const viewport = loadedPage.getViewport({ scale: 1 });
-      if (viewport.width > 0 && viewport.height > 0) setPageRatio(viewport.height / viewport.width);
+      if (viewport.width > 0 && viewport.height > 0) {
+        const ratio = viewport.height / viewport.width;
+        setPageRatio(ratio);
+        // Cache it on the document so this slot (and its neighbours) never
+        // guess again — a wrong guess is what shifts scrollHeight mid-scroll.
+        onRatio(pageNumber, ratio);
+      }
       if (!smartFit) return;
       const p = page as Parameters<typeof measureContentBox>[0];
       void (async () => {
@@ -243,7 +255,7 @@ function LazyPage({
         if (next) setFit(next);
       })();
     },
-    [smartFit, width]
+    [smartFit, width, onRatio, pageNumber]
   );
 
   // Fully blank sheet (trailing page of a Sheets export) — collapse it.
@@ -617,6 +629,52 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
     // (DocReaderShell), so they drive this component through the handle.
     // Everything reads through refs: the handle is installed once and must not
     // capture stale zoom/page values.
+    /**
+     * Measured height/width ratio per page. Virtualised slots would otherwise
+     * all guess A4 (1.414) from page 1; when the real page turned out taller
+     * or shorter the document height changed under an active autoscroll and
+     * the view jumped. We remember every measured page and estimate unknown
+     * ones from the running average instead of from page 1 alone.
+     */
+    const pageRatiosRef = useRef<Map<number, number>>(new Map());
+    useEffect(() => { pageRatiosRef.current = new Map(); }, [src]);
+
+    const estimateRatio = useCallback((page: number) => {
+      const known = pageRatiosRef.current;
+      const exact = known.get(page);
+      if (exact) return exact;
+      if (known.size === 0) return 1.414;
+      let sum = 0;
+      known.forEach((r) => { sum += r; });
+      return sum / known.size;
+    }, []);
+
+    /**
+     * Keeps the page under the viewport top pinned while a slot above it
+     * resizes from its estimate to its real height.
+     */
+    const anchorAroundResize = useCallback(() => {
+      const root = scrollRef.current;
+      if (!root) return;
+      const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-page]"));
+      const anchor = nodes.find((n) => n.offsetTop + n.offsetHeight > root.scrollTop);
+      if (!anchor) return;
+      const before = anchor.offsetTop - root.scrollTop;
+      requestAnimationFrame(() => {
+        const r = scrollRef.current;
+        if (!r || !anchor.isConnected) return;
+        const delta = anchor.offsetTop - r.scrollTop - before;
+        if (Math.abs(delta) > 0.5) r.scrollTop += delta;
+      });
+    }, []);
+
+    const handlePageRatio = useCallback((page: number, ratio: number) => {
+      const known = pageRatiosRef.current;
+      const prev = known.get(page);
+      known.set(page, ratio);
+      if (prev === undefined || Math.abs(prev - ratio) > 0.005) anchorAroundResize();
+    }, [anchorAroundResize]);
+
     const zoomRef = useRef(zoom);
     zoomRef.current = zoom;
     const numPagesRef = useRef(0);
@@ -1587,6 +1645,8 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
                     smartFit={isSheetsSource(url)}
                     releaseWhenDistant={releaseDistantPages}
                     pixelRatio={pixelRatio}
+                    estimateRatio={estimateRatio}
+                    onRatio={handlePageRatio}
                   />
                 ))}
             </div>

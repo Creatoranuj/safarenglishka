@@ -162,6 +162,7 @@ export default function MarkdownViewer({ url, title, filename, onBack, hideDownl
     <SmartNotesReader
       title={title}
       markdown={text}
+      docKey={`md:${url}`}
       onBack={onBack}
       onDownload={hideDownload ? undefined : handleSave}
     />

@@ -33,6 +33,8 @@ interface Props {
   alwaysShowFab?: boolean;
   /** Stable identity used to isolate lifecycle events from other mounted readers. */
   readerId?: string;
+  /** Autoscroll identity — per-document speed + auto-resume. Defaults to `url`. */
+  docKey?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export default function PdfViewerWithAutoScroll({
   showLoadingOverlay = true,
   alwaysShowFab = false,
   readerId,
+  docKey,
 }: Props) {
   // When always-visible, sit well above the mobile browser gesture bar and
   // any dev badges (default 24 hid the FAB under Chrome's URL bar / Lovable badge).
@@ -122,6 +125,7 @@ export default function PdfViewerWithAutoScroll({
             bottomOffset={effectiveFabOffset}
             visible={alwaysShowFab || chrome.visible}
             onActiveChange={chrome.setPinned}
+            docKey={docKey || `pdf:${url}`}
           />
         );
 

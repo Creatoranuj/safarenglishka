@@ -2203,7 +2203,7 @@ const LessonView = () => {
                                 <Suspense fallback={<LoadingSpinner />}><ObsidianMarkdown>{currentLesson!.transcript_md!}</ObsidianMarkdown></Suspense>
                               </div>
                               {/* Inline Auto-Scroll FAB — scrolls the notes container above */}
-                              <ReaderOverlays targetRef={inlineNotesScrollRef} bottomOffset={96} />
+                              <ReaderOverlays targetRef={inlineNotesScrollRef} bottomOffset={96} docKey={`lesson-notes:${currentLesson!.id}`} />
                             </div>
                           ) : (
                             <div className="w-full px-4 sm:px-6 pt-4 pb-10">
