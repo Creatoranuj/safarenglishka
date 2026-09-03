@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { requireUser } from "../_shared/auth.ts";
 import { isRateLimited, rateLimitedResponse } from "../_shared/rateLimit.ts";
 import { callAiGateway } from "../_shared/aiGateway.ts";
+import { DOUBT_MODEL } from "../_shared/aiModels.ts";
 
 // v5: added per-user rate limit (C-1) — lesson-scoped chat accepts { lesson, message, history }
 // Redeployed 2026-07-22: pick up rotated LOVABLE_API_KEY.
@@ -249,7 +250,7 @@ ${ctx || "(no lesson context provided)"}
     const aiResponse = await callAiGateway({
       apiKey: LOVABLE_API_KEY,
       body: {
-        model: "google/gemini-3.7-flash",
+        model: DOUBT_MODEL,
         messages: chatMessages,
         temperature: isLessonChat ? (ungrounded ? 0.2 : 0.4) : 0.6,
         max_tokens: 3000,

@@ -4,12 +4,13 @@ import { requireUser } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { sanitizeAiField } from "../_shared/sanitize.ts";
 import { callAiGateway, classifyGatewayFailure } from "../_shared/aiGateway.ts";
+import { DOUBT_MODEL, RETIRED_MODEL_PATTERN } from "../_shared/aiModels.ts";
 
 // Redeployed 2026-07-22: pick up rotated LOVABLE_API_KEY.
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const CHATBOT_AI_MODEL = 'google/gemini-3.7-flash';
+const CHATBOT_AI_MODEL = DOUBT_MODEL;
 const CHATBOT_MAX_TOKENS = 8192;
 const CONTEXT_BUDGET_MS = 1800;
 const WEB_FALLBACK_BUDGET_MS = 2500;
@@ -20,7 +21,7 @@ function resolveChatbotModel(rawModel?: string | null): string {
 
   // Several older admin-saved values are no longer valid or were preview-only.
   // Keep the edge function resilient even if the database setting drifts again.
-  if (/preview|gemini-3-flash|gemini-2\.5-flash|gemini-3\.5-flash/i.test(model)) return CHATBOT_AI_MODEL;
+  if (RETIRED_MODEL_PATTERN.test(model)) return CHATBOT_AI_MODEL;
 
   return model.includes('/') ? model : `google/${model}`;
 }

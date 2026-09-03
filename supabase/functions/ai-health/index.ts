@@ -4,6 +4,7 @@
 // with a raw "non-2xx" toast.
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { callAiGateway } from "../_shared/aiGateway.ts";
+import { DOUBT_MODEL } from "../_shared/aiModels.ts";
 
 let cache: { at: number; body: unknown; status: number } | null = null;
 const TTL_MS = 30_000;
@@ -34,7 +35,10 @@ Deno.serve(async (req) => {
     const res = await callAiGateway({
       apiKey,
       body: {
-        model: "google/gemini-3.5-flash", // redeploy tag 2026-07-22
+        // Probe the SAME model production answers doubts with. Probing a
+        // different model let this endpoint report green while the real
+        // doubt path was dead.
+        model: DOUBT_MODEL,
         messages: [{ role: "user", content: "ping" }],
         max_tokens: 1,
       },

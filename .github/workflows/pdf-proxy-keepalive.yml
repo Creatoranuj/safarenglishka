@@ -2,6 +2,13 @@ name: PDF + Notion Edge Keepalive
 
 # Warms the pdf-proxy and notion-page edge functions every 10 minutes so
 # first-tap Notes/DPP opens do not pay Deno cold-start.
+#
+# It ALSO functionally verifies that pdf-proxy still returns real PDF bytes
+# (not just that the function booted). pdf-proxy requires a signed-in user —
+# paid content — so the functional check needs a monitoring account:
+#   MONITOR_EMAIL / MONITOR_PASSWORD  (repo secrets, a normal free-tier user)
+# Without those secrets the job still warms the functions and prints a notice
+# saying the functional check was skipped.
 
 on:
   schedule:
@@ -35,6 +42,49 @@ jobs:
             echo "::warning::pdf-proxy unreachable"
             exit 0
           fi
+
+      - name: Verify pdf-proxy actually serves PDF bytes
+        env:
+          BASE: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          ANON: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+          MONITOR_EMAIL: ${{ secrets.MONITOR_EMAIL }}
+          MONITOR_PASSWORD: ${{ secrets.MONITOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MONITOR_EMAIL:-}" ] || [ -z "${MONITOR_PASSWORD:-}" ]; then
+            echo "::notice::Functional PDF check skipped — set MONITOR_EMAIL and MONITOR_PASSWORD repo secrets to enable it."
+            exit 0
+          fi
+
+          # Sign the monitoring user in to get a real user JWT.
+          JWT=$(curl -s --max-time 20 \
+            -X POST "${BASE%/}/auth/v1/token?grant_type=password" \
+            -H "apikey: $ANON" -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg e "$MONITOR_EMAIL" --arg p "$MONITOR_PASSWORD" '{email:$e,password:$p}')" \
+            | jq -r '.access_token // empty')
+          if [ -z "$JWT" ]; then
+            echo "::error::Monitoring sign-in failed — pdf-proxy could not be functionally verified."
+            exit 1
+          fi
+
+          TARGET="https://cdn.jsdelivr.net/gh/mozilla/pdf.js@master/test/pdfs/basicapi.pdf"
+          URL="${BASE%/}/functions/v1/pdf-proxy?kind=url&url=$(printf '%s' "$TARGET" | jq -sRr @uri)"
+          STATUS=$(curl -s -L -o /tmp/probe.pdf -w "%{http_code}" --max-time 30 \
+            -H "apikey: $ANON" -H "Authorization: Bearer $JWT" "$URL" || echo "000")
+
+          MAGIC=$(head -c 4 /tmp/probe.pdf || true)
+          SIZE=$(stat -c%s /tmp/probe.pdf 2>/dev/null || echo 0)
+          echo "pdf-proxy GET → $STATUS, ${SIZE} bytes, magic='${MAGIC}'"
+
+          # The whole point of this step: boot is not enough, the bytes must
+          # be a PDF. A JSON error body or an HTML login page fails here.
+          if [ "$STATUS" != "200" ] || [ "$MAGIC" != "%PDF" ]; then
+            echo "::error::pdf-proxy is NOT serving PDFs (status=$STATUS magic='$MAGIC'). Students cannot open notes."
+            head -c 300 /tmp/probe.pdf || true
+            exit 1
+          fi
+          echo "pdf-proxy functional check OK (${SIZE} bytes)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: GET notion-page
         run: |
           BASE="${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}"
