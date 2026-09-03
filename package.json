@@ -22,7 +22,10 @@
     "cap:ios": "npx cap open ios",
     "guard:tokens": "node scripts/check-design-tokens.mjs",
     "guard:console": "node scripts/check-console-usage.mjs",
-    "guard:all": "node scripts/check-design-tokens.mjs && node scripts/check-console-usage.mjs"
+    "guard:all": "node scripts/check-design-tokens.mjs && node scripts/check-console-usage.mjs && node scripts/guards/run.mjs",
+    "guard:skills": "node scripts/guards/run.mjs",
+    "guard:skills:block": "node scripts/guards/run.mjs --mode block",
+    "guard:skills:snapshot": "node scripts/guards/run.mjs --snapshot"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "7.0.1",
