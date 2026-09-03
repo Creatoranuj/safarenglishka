@@ -222,3 +222,141 @@ hai (repeat-export memory leak band).
 **Verdict update:** R2 secrets set hote hi Drive quota risk ≈ khatam aur
 Supabase egress pressure ~0. Capacity ceiling phir bhi ~700–800 MAU hi rahegi
 (concurrency wall wahi hai) — par ab **PDF side kabhi bottleneck nahi banegi.**
+
+---
+
+# v2 — Deep Scan (2026-09-03, R2 ke baad)
+
+Ye section aapke seedhe sawaalon ka jawaab hai. Har number aaj ki **live**
+Supabase query se liya gaya hai (project `wegamscqtvqhxowlskfm`).
+
+## Rating: 4.5 / 5
+
+R2 aane ke baad sabse mehnga resource (PDF bandwidth) Supabase ke meter se
+poori tarah nikal gaya. Ab **koi bhi single limit "content delivery" ki wajah
+se nahi tootegi** — sirf concurrency aur time-based row growth bachi hai.
+Aadha point isliye kata hai: teen append-only tables par abhi bhi retention
+job nahi hai, aur `phone_otps` par RLS on hai par ek bhi policy nahi.
+
+## 1. Aaj ki live sthiti
+
+| Metric | Aaj | Free limit |
+| --- | --- | --- |
+| DB size | 20 MB | 500 MB |
+| Auth users | 11 | 50,000 MAU |
+| Enrollments / Lessons | 15 / 14 | — |
+| `user_sessions` | 580 rows, 328 kB | — |
+| `chatbot_logs` | 142 rows, 296 kB | — |
+| `pdf_proxy_metrics` | 337 rows, 128 kB | — |
+
+PDF proxy events (live): `url_success` 177, `drive_success` 117,
+`drive_cache_hit` 35, `drive_cache_store` 8 → cache warm hona shuru ho chuka
+hai; R2 secrets set hote hi `drive_success` ghat kar `hit-r2` ban jayega.
+
+## 2. Kitne bachche padha sakte ho?
+
+| Kya | Number | Kaun sa limit pehle chhuyega |
+| --- | --- | --- |
+| Registered accounts | **~2,000** | DB size (500 MB) — abhi 25x headroom |
+| Monthly active (MAU) | **~700–800** | Edge function invocations + Auth rate limits |
+| Ek saath online (peak) | **~150–200** | Concurrency wall — DB pooler + edge cold starts |
+
+Bottom line: **~700–800 bachche mahine bhar aaram se padh sakte hain.** Isse
+aage jaane par sabse pehle *ek saath online* wali line tootegi, DB size nahi.
+
+## 3. Timeline — kab tak chalega
+
+| Students | DB size (12 mahine baad) | Egress | Status |
+| --- | --- | --- | --- |
+| 100 | ~45 MB | ~0.3 GB | Aaram se |
+| 300 | ~110 MB | ~0.9 GB | Aaram se |
+| 800 | ~260 MB | ~2.5 GB | Limit ke paas, retention job chahiye |
+| 2,000 | 500 MB+ | 5 GB+ | Paid plan ($25/mo) ka time |
+
+Egress numbers R2 ke baad ke hain — video YouTube pe, PDF Cloudflare pe, to
+Supabase se sirf JSON metadata jaata hai (~1–3 kB per screen).
+
+## 4. Jab crash hoga tab kya chalega, kya nahi (end-to-end)
+
+| Feature | Supabase down/limit-hit par | Kyon |
+| --- | --- | --- |
+| YouTube video | **Chalega** | Player seedha YouTube CDN se |
+| PDF (R2 CDN link) | **Chalega** | 302 ke baad traffic Cloudflare pe |
+| PDF (Drive fallback) | Chalega, dheere | Drive ka apna quota |
+| Pehle se khuli hui reading | **Chalegi** | Offline cache + IndexedDB |
+| Login / signup | **Band** | Auth Supabase pe |
+| Progress save | Band (local me queue) | Sync baad me |
+| AI doubt (chatbot) | Band | Edge function |
+| Payment / enrollment | Band | Razorpay webhook Supabase pe likhta hai |
+
+Girne ka order: **AI doubt → progress sync → login → payment.** Content
+(video + PDF) sabse aakhir tak zinda rehta hai — yahi is architecture ki jeet
+hai.
+
+## 5. Password reset — haan, already integrated hai
+
+- `/forgot-password` → `supabase.auth.resetPasswordForEmail(email)`
+- Mail ka link → `/reset-password` → `supabase.auth.updateUser({ password })`
+- Logged-in user Settings se bhi password badal sakta hai.
+
+Free tier ki ek hi bandish: **Supabase ka built-in email sender ~2 mail/hour
+per project** bhejta hai. 10–20 students ek saath reset maangein to mail
+queue me atak jayegi. Fix (free): Supabase → Auth → SMTP me apna Resend /
+Brevo SMTP daal do — limit hazaaron mail/mahina ho jaati hai. Ye 5-minute ka
+dashboard step hai, code change nahi.
+
+## 6. Delivery matrix
+
+| Content | Path | Supabase egress |
+| --- | --- | --- |
+| Video | YouTube (`get-video-stream`, YouTube-CDN-only SSRF guard) | 0 |
+| PDF (naya) | `r2-upload` → Cloudflare R2 public URL | 0 |
+| PDF (purana Drive) | `pdf-proxy` → R2 cache-hit 302, warna Drive | ~0 |
+| PDF (Notion) | Notion public page | 0 |
+| Metadata/progress | Supabase Postgres | ~1–3 kB/screen |
+
+Haan — **ye sach me ek free-tier digital library hai.** Supabase yahan sirf
+"khaata-bahi" hai, "godaam" nahi.
+
+## 7. Deep-scan findings
+
+| Sev | Finding | Fix |
+| --- | --- | --- |
+| HIGH | `phone_otps` par RLS enabled hai par **ek bhi policy nahi** — table Data API se poori tarah locked hai; agar koi client-side read expect kar raha hai to silently fail karega | Ya explicit `service_role`-only rakho (intentional) ya policy likho |
+| MEDIUM | **Leaked-password protection OFF** | Supabase → Auth → Password: "Check against HaveIBeenPwned" ON (free) |
+| MEDIUM | 20 `SECURITY DEFINER` functions signed-in users ko callable hain | Har ek pe `REVOKE EXECUTE ... FROM authenticated` jahan zaroorat nahi |
+| MEDIUM | `user_sessions` / `chatbot_logs` / `pdf_proxy_metrics` par **retention nahi** — time ke saath badhenge, students se nahi | 90-din pruning job (pg_cron) |
+| LOW | `reltuples` -1 kuch tables pe (`webhook_events`, `lesson_ratings`) — kabhi ANALYZE nahi hua | `ANALYZE` / autovacuum tune |
+
+**Crash-shield scan (clean):** `crashShield.ts` heartbeat + global rejection
+handler maujood; `ErrorBoundary` me 60-second cooldown guard hai (infinite
+reload loop nahi); `setInterval` 29 vs `clearInterval` 30 (balanced);
+`createObjectURL`/`revokeObjectURL` 64 references balanced;
+`supabase.channel` sirf 2 jagah, `removeChannel` cleanup 14 jagah.
+
+## 8. Security implications (R2)
+
+| Cheez | Status |
+| --- | --- |
+| Upload auth | Staff-only (admin/teacher role check, students 403) |
+| File type | Magic byte `%PDF-` — Content-Type trust nahi kiya |
+| Size | 100 MB hard cap (Content-Length + actual bytes) |
+| Path traversal | Filename sanitize + 128-bit random prefix → impossible |
+| Open redirect | Redirect sirf allowlisted hosts pe (R2 public host + Drive) |
+| Accepted risk | R2 public link share ho sakta hai — wahi model jo jsDelivr PDFs ka pehle se tha; paywall gate proxy pe hai |
+
+## 9. Kya karna chahiye
+
+**Abhi (aapke 5 minute, dashboard):**
+1. Cloudflare → R2 → bucket `safar-pdfs` (public ON) → API token.
+2. Supabase → Edge Functions → Secrets: `R2_ACCOUNT_ID`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET=safar-pdfs`,
+   `R2_PUBLIC_URL`. Phir `supabase functions deploy pdf-proxy r2-upload`.
+3. Auth → Password → leaked-password protection ON.
+4. Auth → SMTP me apna Resend/Brevo daalo (password-reset mail limit khatam).
+
+**Is mahine (code, main karunga bolne par):** 90-din retention job,
+`phone_otps` policy, SECURITY DEFINER functions pe REVOKE.
+
+**500 students ke baad:** connection pooling review, read-heavy pages pe
+`staleTime` badhao, phir Pro plan.
