@@ -307,9 +307,13 @@ const Admin = () => {
     ].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
+    // Release the blob URL after the download has been handed to the browser —
+    // unreleased object URLs pile up on repeat exports (low-RAM Android).
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
     toast.success(`Exported ${data.length} records`);
   };
 
