@@ -54,6 +54,15 @@ jobs:
         with:
           node-version: 24
 
+      - uses: oven-sh/setup-bun@v2
+
+      # The parity script reads node_modules to compare each plugin's peer
+      # range against the project's Capacitor major — without an install it
+      # fails on every commit ("missing from node_modules"), which is why
+      # this step was red before. --no-save keeps the lockfile untouched.
+      - name: Install dependencies
+        run: bun install --no-save
+
       - name: Capacitor dependency parity
         run: node scripts/verify-capacitor-deps.mjs
 
