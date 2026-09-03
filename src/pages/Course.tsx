@@ -164,9 +164,10 @@ const CoursePage = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('lessons')
-        .select('*')
+        .select('id, title, video_url, description, is_locked, created_at, lecture_type, position')
         .eq('course_id', Number(id))
-        .order('position', { ascending: true });
+        .order('position', { ascending: true })
+        .limit(500);
       if (error) throw error;
       return (data || []).map((l: any) => ({
         id: l.id,
