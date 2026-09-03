@@ -207,9 +207,11 @@ const Admin = () => {
 
       // LibraryManager fetches its own data on mount; no eager fetch needed here.
 
+      // NOTE: never select "*" here — session_token is column-level revoked
+      // for anon/authenticated, so a wildcard select is rejected by Postgres.
       const { count: sessionsCount } = await supabase
         .from("user_sessions")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("is_active", true);
 
       setStatsData({
