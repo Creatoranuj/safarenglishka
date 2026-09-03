@@ -1,6 +1,13 @@
 # Safar English Kaa
 Education Platform
 
+## Setup guides
+
+- **[Cloudflare R2 PDF hosting](docs/R2_SETUP.md)** — bucket + public access + API token + Supabase Edge secrets + deploy commands + verify/rollback. PDF egress ko Supabase se hata kar $0 par le jaata hai.
+- [Free-tier capacity audit](FREE_TIER_CAPACITY.md) — kitne students, kab tootega, crash pe kya chalega.
+
+
+
 ## Environment Flags
 
 | Flag | Stage | Purpose |
