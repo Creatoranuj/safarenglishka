@@ -1,5 +1,6 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { driveKey, getR2, r2Has, r2Put, r2Url } from "../_shared/r2.ts";
 
 const DRIVE_ID_RE = /^[a-zA-Z0-9_-]{10,200}$/;
 // Hardening cap for generic allow-listed CDN proxy only. Drive PDFs are streamed
@@ -249,6 +250,25 @@ function recordMetric(row: { event: string; drive_id?: string | null; tier?: str
  * pdf-cache bucket. Returns a 302 Response on cache hit, null on miss.
  */
 async function tryCacheRedirect(driveId: string): Promise<Response | null> {
+  // Tier 0 — Cloudflare R2 (when configured): zero egress fees, public
+  // immutable object, real Range support from Cloudflare's edge. This is the
+  // tier that removes the Drive per-file daily quota risk entirely.
+  const r2 = getR2();
+  if (r2) {
+    const key = driveKey(driveId);
+    if (await r2Has(r2, key)) {
+      recordMetric({ event: "drive_cache_hit", drive_id: driveId, tier: "r2", last_status: 302 });
+      return new Response(null, {
+        status: 302,
+        headers: headersWithCors({
+          Location: r2Url(r2, key),
+          "Cache-Control": "public, max-age=300",
+          "X-Pdf-Cache": "hit-r2",
+        }),
+      });
+    }
+  }
+  // Tier 1 — Supabase pdf-cache bucket (signed URL, 6h).
   if (!adminClient) return null;
   const path = `drive/${driveId}.pdf`;
   try {
@@ -279,18 +299,18 @@ async function tryCacheRedirect(driveId: string): Promise<Response | null> {
  * response stream ends — otherwise the tee upload gets killed mid-flight.
  */
 function cacheDriveBodyInBackground(driveId: string, bodyStream: ReadableStream<Uint8Array>, contentType: string) {
-  if (!adminClient) return;
+  const r2 = getR2();
+  if (!adminClient && !r2) return;
   const path = `drive/${driveId}.pdf`;
   const work = (async () => {
     try {
       const reader = bodyStream.getReader();
       const chunks: Uint8Array[] = [];
       let total = 0;
-      // Supabase Storage enforces a project-level per-object cap (default
-      // 50 MiB on managed projects). Skip caching when a PDF would exceed
-      // that — the Supabase edge CDN already gives a ~10× speedup on repeat
-      // opens for larger PDFs via the immutable Cache-Control we set below.
-      const MAX = 48 * 1024 * 1024;
+      // R2 has no small per-object cap — buffer up to 128 MB (edge worker
+      // RAM ceiling is the real limit). The Supabase bucket fallback keeps
+      // its 48 MB cap (project-level storage limit) below.
+      const MAX = (r2 ? 128 : 48) * 1024 * 1024;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -307,6 +327,19 @@ function cacheDriveBodyInBackground(driveId: string, bodyStream: ReadableStream<
       let offset = 0;
       for (const c of chunks) { merged.set(c, offset); offset += c.byteLength; }
       const blob = new Blob([merged], { type: contentType || "application/pdf" });
+      // Primary: R2 (zero egress). Fallback: Supabase pdf-cache bucket when
+      // R2 is not configured or the PUT failed.
+      if (r2) {
+        const ok = await r2Put(r2, driveKey(driveId), blob, contentType || "application/pdf");
+        if (ok) {
+          console.info("[pdf-proxy:cache] stored in R2", driveId, total);
+          recordMetric({ event: "drive_cache_store", drive_id: driveId, tier: "r2", last_status: 200 });
+          return;
+        }
+        console.warn("[pdf-proxy:cache] R2 put failed, falling back to Supabase bucket", driveId);
+      }
+      if (!adminClient) return;
+      if (total > 48 * 1024 * 1024) return; // Supabase project object cap
       const { error } = await adminClient.storage.from(CACHE_BUCKET).upload(path, blob, {
         contentType: contentType || "application/pdf",
         upsert: true,
@@ -544,6 +577,13 @@ export function isAllowedPdfUrl(raw: string): boolean {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return false; // IPv4 literal
     if (host.includes(":")) return false;                 // IPv6 literal
     if (/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(host)) return false;
+    // Our own R2 public bucket host is always allowed (admin-pasted CDN URLs).
+    const r2 = getR2();
+    if (r2) {
+      try {
+        if (new URL(r2.publicUrl).hostname.toLowerCase() === host) return true;
+      } catch { /* malformed R2_PUBLIC_URL — ignore */ }
+    }
     return ALLOWED_HOSTS.some((re) => re.test(host)) || matchesDynamicHost(host);
   } catch {
     return false;
