@@ -1,0 +1,82 @@
+name: Skill Guards
+
+# The review skills (crash-shield, asset-optimization, back-button, red-team,
+# perf, supabase-rls, ...) used to be applied by hand on every PR. This
+# workflow encodes the rule from each one that actually regressed before, so
+# the regression is caught here instead of in a student's hand.
+#
+# Two jobs on purpose:
+#   blocking  — security / crash / payload. Fails the PR.
+#   advisory  — polish and taste. Reports in the job summary, never blocks.
+#
+# Budgets live in scripts/guards/guards.mjs and only ever ratchet DOWN.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'supabase/migrations/**'
+      - 'capacitor.config.ts'
+      - 'scripts/guards/**'
+      - '.github/workflows/skill-guards.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'supabase/migrations/**'
+      - 'capacitor.config.ts'
+      - 'scripts/guards/**'
+  workflow_dispatch:
+
+concurrency:
+  group: skill-guards-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  blocking:
+    name: Blocking guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Capacitor dependency parity
+        run: node scripts/verify-capacitor-deps.mjs
+
+      - name: Skill guards (blocking)
+        run: node scripts/guards/run.mjs --mode block
+
+  advisory:
+    name: Advisory guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    # Polish findings should never stop a fix from shipping.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Skill guards (advisory)
+        run: node scripts/guards/run.mjs --mode warn
