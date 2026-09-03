@@ -114,6 +114,12 @@ const LectureListing = () => {
   );
 
   const [hasPurchased, setHasPurchased] = useState(false);
+  /** True only once the NETWORK enrollment answer has landed. The warm
+   *  `chapterCache` sets `loading = false` on mount while `hasPurchased` is
+   *  still its initial `false`, so gating the enrollment guard on `loading`
+   *  bounced enrolled students to /buy-course (which then sent them back with
+   *  an "already enrolled" toast). Same fix as LessonView.tsx. */
+  const [accessResolved, setAccessResolved] = useState(false);
   const [chapterMissing, setChapterMissing] = useState(false);
 
   const [showSubChapters, setShowSubChapters] = useState(cached?.showSubChapters ?? false);
@@ -132,6 +138,7 @@ const LectureListing = () => {
     const fetchData = async () => {
       if (!courseId) return;
       setChapterMissing(false);
+      setAccessResolved(false);
       try {
         const { data: courseData, error: courseError } = await supabase
           .from("courses").select("id, title, grade").eq("id", Number(courseId)).single();
@@ -141,8 +148,10 @@ const LectureListing = () => {
         if (user) {
           const { data: enrollment } = await supabase.from("enrollments").select("id")
             .eq("user_id", String(user.id)).eq("course_id", Number(courseId)).eq("status", "active").maybeSingle();
-          if (enrollment) setHasPurchased(true);
+          setHasPurchased(!!enrollment);
         }
+        // Fresh access answer is in — the guard below may now run.
+        setAccessResolved(true);
 
         if (chapterId && chapterId !== "__all__") {
           // Guard against deep links that use a chapter code instead of its id —
@@ -286,12 +295,12 @@ const LectureListing = () => {
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {
-    if (loading || !courseId || !user) return;
+    if (!accessResolved || !courseId || !user) return;
     if (!hasPurchased && !isAdminOrTeacher) {
       toast.error("Please purchase this course to access content.");
       navigate(`/buy-course?id=${courseId}`, { replace: true });
     }
-  }, [loading, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
+  }, [accessResolved, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
 
   useEffect(() => {
     if (!courseId) return;
