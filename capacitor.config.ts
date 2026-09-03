@@ -7,7 +7,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.safarenglishka.app',
-  appName: 'Safar English',
+  appName: 'Safar English Ka',
   webDir: 'dist',
   android: {
     allowMixedContent: false,

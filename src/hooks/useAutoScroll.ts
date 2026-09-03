@@ -298,7 +298,10 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     });
   }, [docKey]);
 
-  const canScroll = (node: HTMLElement | null): node is HTMLElement =>
+  // Plain boolean (not a type predicate): as a predicate it narrowed
+  // `rawEl` to `never` on the false branch below, which broke the
+  // descendant/ancestor fallbacks at typecheck time.
+  const canScroll = (node: HTMLElement | null): boolean =>
     !!node && node.scrollHeight - node.clientHeight > 2;
 
   /**
@@ -333,7 +336,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     // 3) the page itself — inline Smart Notes / inline PDF inside a normal
     //    (non-overflow) lesson section scroll the document, not a box.
     const doc = (document.scrollingElement ?? document.documentElement) as HTMLElement | null;
-    if (canScroll(doc)) return doc;
+    if (doc && canScroll(doc)) return doc;
     return null;
   };
 

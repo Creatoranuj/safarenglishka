@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePortalHost } from "../../hooks/usePortalHost";
+import { useOverlayBackClose } from "../../hooks/useOverlayBackClose";
 import { ChevronsDown, ChevronsUp } from "lucide-react";
 import { tapHaptic, selectionHaptic } from "../../lib/native/haptics";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
@@ -57,6 +58,10 @@ export default function AutoScrollFab({ targetRef, iframeRef, bottomOffset = 84,
     scrollToTop,
   } = useAutoScroll({ targetRef, iframeRef, docKey });
   const [open, setOpen] = useState(false);
+  // Android hardware back must close the settings sheet instead of leaving the
+  // reader (the sheet is a plain portal, not a Radix dialog, so it has no
+  // built-in back handling).
+  useOverlayBackClose(open, () => setOpen(false), "autoscroll-sheet");
 
   // ── Settings sheet a11y ────────────────────────────────────────────
   // The sheet is a hand-rolled modal (it must live in the fullscreen
