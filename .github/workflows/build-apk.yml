@@ -974,12 +974,21 @@ jobs:
 
       - name: 📦 Locate + rename signed AAB (Play Store artifact)
         if: env.HAS_KEYSTORE == 'true'
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           # bundleRelease produces app-release.aab. Skip silently on debug-only
           # builds (no keystore) because Play uploads require a signed bundle.
           AAB_SRC="android/app/build/outputs/bundle/release/app-release.aab"
           if [ ! -f "$AAB_SRC" ]; then
-            echo "::warning::AAB not produced at $AAB_SRC — Play Store upload will be skipped for this run."
+            if [ -z "${PLAY_JSON:-}" ]; then
+              # Expected path: the Gradle step intentionally skipped
+              # :app:bundleRelease because Play credentials aren't configured.
+              # Emit a notice (grey), not a warning (yellow) — nothing is wrong.
+              echo "::notice::Play credentials not configured — AAB intentionally skipped (APK release unaffected)."
+            else
+              echo "::warning::AAB not produced at $AAB_SRC even though Play credentials are set — Play Store upload will be skipped for this run."
+            fi
             echo "HAS_AAB=false" >> $GITHUB_ENV
             exit 0
           fi
