@@ -44,7 +44,8 @@ const DiscussionSection: React.FC<DiscussionSectionProps> = ({
         .from('comments')
         .select('*')
         .eq('lesson_id', lessonId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) {
         reportError(error, { surface: "DiscussionSection.comments" });
