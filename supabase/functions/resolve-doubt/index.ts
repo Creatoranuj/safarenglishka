@@ -143,60 +143,32 @@ serve(async (req) => {
     // Build system prompt
     let systemPrompt: string;
     if (isLessonChat) {
-      // ---- Transcript resolution (server-side, cached) ----------------------
-      // If the client didn't send a transcript, try the cached auto-transcript
-      // on the lesson row. If neither exists and we have a youtubeId, fetch it
-      // inline (5s budget). Result is written back to `lessons.auto_transcript*`
-      // so subsequent doubts on the same lesson are instant.
+      // ---- Smart Notes resolution (no third-party transcript fetch) --------
+      // Ground truth is the lesson's Smart Notes (markdown / transcript_md).
+      // If the client didn't send them, read the cached copy from the lesson
+      // row. We deliberately DO NOT call the YouTube transcript function here:
+      // that path burns third-party rate limits on every single doubt. When no
+      // Smart Notes exist, the model answers from its own general knowledge.
       let resolvedTranscript = (lesson?.transcript || "").trim();
-      let resolvedTranscriptSource: "client" | "cache" | "fetched" | "" =
+      let resolvedTranscriptSource: "client" | "cache" | "" =
         resolvedTranscript ? "client" : "";
 
       if (!resolvedTranscript && lesson?.id) {
         try {
           const { data: cached } = await supabaseAdmin
             .from("lessons")
-            .select("auto_transcript, auto_transcript_status")
+            .select("transcript_md, auto_transcript")
             .eq("id", lesson.id)
             .maybeSingle();
-          if (cached?.auto_transcript && cached.auto_transcript.length > 40) {
-            resolvedTranscript = cached.auto_transcript as string;
+          const md =
+            (cached?.transcript_md as string | null) ||
+            (cached?.auto_transcript as string | null);
+          if (md && md.trim().length > 40) {
+            resolvedTranscript = md;
             resolvedTranscriptSource = "cache";
-          } else if (cached?.auto_transcript_status === "none") {
-            // Known-empty; skip the fetch.
-            resolvedTranscriptSource = "";
-          } else if (lesson.youtubeId) {
-            const ctrl = new AbortController();
-            const t = setTimeout(() => ctrl.abort(), 5000);
-            try {
-              const r = await fetch(`${supabaseUrl}/functions/v1/fetch-youtube-transcript`, {
-                method: "POST",
-                signal: ctrl.signal,
-                headers: {
-                  "Content-Type": "application/json",
-                  // Forward the caller's JWT — fetch-youtube-transcript requires
-                  // an authenticated user (no anonymous transcript writes).
-                  Authorization: `Bearer ${auth.token}`,
-                  apikey: supabaseServiceKey,
-                },
-                body: JSON.stringify({ youtubeId: lesson.youtubeId, lessonId: lesson.id }),
-              });
-              if (r.ok) {
-                const j = (await r.json().catch(() => ({}))) as {
-                  ok?: boolean;
-                  transcript?: string;
-                };
-                if (j?.ok && j.transcript && j.transcript.length > 40) {
-                  resolvedTranscript = j.transcript;
-                  resolvedTranscriptSource = "fetched";
-                }
-              }
-            } finally {
-              clearTimeout(t);
-            }
           }
         } catch (e) {
-          console.error("resolve-doubt: transcript resolution failed", e);
+          console.error("resolve-doubt: smart-notes lookup failed", e);
         }
       }
 
