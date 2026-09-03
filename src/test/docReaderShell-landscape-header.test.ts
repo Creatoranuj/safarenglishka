@@ -49,9 +49,10 @@ describe("DocReaderShell hidden header cannot leak out of the rotation frame", (
   });
 
   it("clips the pseudo-landscape rotation frame", () => {
-    expect(src).toContain(
-      'className="relative flex min-w-0 flex-1 flex-col overflow-hidden"',
-    );
+    // Substring, not the whole className: the guard exists to prove the frame
+    // still CLIPS (overflow-hidden) — appending a cosmetic class such as
+    // `bg-background` must not fail a rotation-frame regression test.
+    expect(src).toContain("relative flex min-w-0 flex-1 flex-col overflow-hidden");
   });
 });
 
