@@ -1,11 +1,12 @@
 import { memo } from "react";
-import { Play, Lock, ClipboardCheck, CheckCircle2, Circle, FileText, BookOpen, ClipboardList, Download } from "lucide-react";
+import { Play, Lock, ClipboardCheck, CheckCircle2, Circle, BookOpen, ClipboardList, Download } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { format } from "date-fns";
 import { getLessonThumbnail } from "../../lib/videoUtils";
 import { SmartImage } from "../common/SmartImage";
 import scienceIconAsset from "../../assets/icons/science-3d.webp";
 import PdfIcon from "../common/PdfIcon";
+import EyeIcon from "../common/EyeIcon";
 import MinimalDocIcon from "../common/MinimalDocIcon";
 import pdfIconSvg from "../../assets/pdf-icon-grayscale.svg";
 
@@ -61,7 +62,7 @@ const typeBadgeClass: Record<string, string> = {
 
 const typeIcon: Record<string, React.ReactNode> = {
   VIDEO: <Play className="h-3 w-3" />,
-  PDF: <FileText className="h-3 w-3" />,
+  PDF: <EyeIcon className="h-3 w-3" />,
   DPP: <ClipboardList className="h-3 w-3" />,
   NOTES: <BookOpen className="h-3 w-3" />,
   TEST: <ClipboardCheck className="h-3 w-3" />,
@@ -108,7 +109,7 @@ const LectureCardImpl = ({
   // player. The PDF/Notes attachment chip on the same card handles the
   // drawer separately, so users never lose the direct "Watch" affordance.
   const watchLabel = isVideo ? "Watch" : isTest ? "Take Test" : isPdf ? "View PDF" : isNotes ? "View" : "View DPP";
-  const watchIcon = isPdf ? <FileText className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />;
+  const watchIcon = isPdf ? <EyeIcon className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />;
   const handlePrimary = (e: React.MouseEvent) => {
     e.stopPropagation();
     onClick?.();
@@ -199,9 +200,9 @@ const LectureCardImpl = ({
             </button>
           )}
 
-          {/* View CTA — matches Notes card style (play icon + View). */}
+          {/* View CTA — PDFs use the eye (👁️) glyph; videos keep the play button. */}
           <div className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-foreground text-background group-hover:bg-foreground/90 rounded-xl h-10 px-4 text-sm font-semibold transition-colors">
-            <Play className="h-4 w-4 fill-current" />
+            <EyeIcon className="h-4 w-4" />
             View
           </div>
         </div>

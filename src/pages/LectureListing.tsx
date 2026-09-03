@@ -202,6 +202,7 @@ const LectureListing = () => {
               ];
               setLessons(combined.map((l: any, idx: number) => ({
                 ...l, lecture_type: l.lecture_type || "VIDEO", position: l.position || idx + 1,
+                duration: l.duration ?? l.duration_seconds ?? null,
               })));
             } else {
               setShowSubChapters(false);
@@ -212,6 +213,7 @@ const LectureListing = () => {
               if (!lessonsError) {
                 setLessons((lessonsData || []).map((l: any, idx: number) => ({
                   ...l, lecture_type: l.lecture_type || "VIDEO", position: l.position || idx + 1,
+                duration: l.duration ?? l.duration_seconds ?? null,
                 })));
               }
             }
@@ -260,6 +262,7 @@ const LectureListing = () => {
           if (!lessonsError) {
             setLessons((lessonsData || []).map((l: any, idx: number) => ({
               ...l, lecture_type: l.lecture_type || "VIDEO", position: l.position || idx + 1,
+                duration: l.duration ?? l.duration_seconds ?? null,
             })));
           }
         }

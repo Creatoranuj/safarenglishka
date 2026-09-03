@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { reportError } from "@/lib/sentry";
-import { FileText, FileType2, Image as ImageIcon, Music, Video, File, Loader2, Play } from "lucide-react";
+import { FileText, FileType2, Image as ImageIcon, Music, Video, File, Loader2 } from "lucide-react";
+import EyeIcon from "@/components/common/EyeIcon";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { LessonAttachment, LessonAttachmentKind } from "@/hooks/useLessonAttachments";
@@ -8,7 +9,11 @@ import pdfIconSvg from "@/assets/pdf-icon-grayscale.svg";
 
 interface AttachmentRowProps {
   attachment: LessonAttachment;
+  /** Inline open — PDF renders below the player (existing behaviour). */
   onOpenPdf: (url: string, fileName: string) => void;
+  /** Eye (👁️) open — PDF / Smart Note renders FULL PAGE. Falls back to
+   *  `onOpenPdf` when the parent doesn't provide a full-page surface. */
+  onOpenPdfFull?: (url: string, fileName: string) => void;
   resolveUrl: () => Promise<string | null>;
   onDownloaded?: (title: string, url: string, filename: string, kind: string) => void;
   className?: string;
@@ -40,27 +45,36 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AttachmentRow({ attachment, onOpenPdf, resolveUrl, onDownloaded, className, variant = "default" }: AttachmentRowProps) {
+export function AttachmentRow({ attachment, onOpenPdf, onOpenPdfFull, resolveUrl, onDownloaded, className, variant = "default" }: AttachmentRowProps) {
   const [busy, setBusy] = useState(false);
   const Icon = ICONS[attachment.kind] || File;
   const tint = ICON_TINT[attachment.kind] || ICON_TINT.other;
   const sizeStr = formatSize(attachment.file_size);
   const compact = variant === "compact";
 
-  const handleClick = async () => {
+  const open = async (mode: "inline" | "full") => {
     if (busy) return;
     setBusy(true);
     try {
       const url = await resolveUrl();
       if (!url) return;
       if (attachment.kind === "pdf") {
-        onOpenPdf(url, attachment.title || attachment.file_name);
+        const name = attachment.title || attachment.file_name;
+        if (mode === "full" && onOpenPdfFull) onOpenPdfFull(url, name);
+        else onOpenPdf(url, name);
       } else {
         await runDownload(url);
       }
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleClick = () => void open("inline");
+  // Eye (👁️) → always the full-page reader.
+  const handleEyeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    void open("full");
   };
 
   const runDownload = async (url: string) => {
@@ -84,13 +98,17 @@ export function AttachmentRow({ attachment, onOpenPdf, resolveUrl, onDownloaded,
 
   return (
     attachment.kind === "pdf" ? (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={handleClick}
-        disabled={busy}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); }
+        }}
         aria-label={`Open PDF: ${attachment.title || attachment.file_name}`}
         className={cn(
-          "nb-tap group relative w-full text-left bg-card border border-border/60 disabled:opacity-60",
+          "nb-tap group relative w-full text-left bg-card border border-border/60 cursor-pointer",
+          busy && "opacity-60",
           compact
             ? "rounded-xl p-2 active:bg-accent/50 transition-colors"
             : "rounded-2xl p-3 hover:shadow-md hover:border-primary/40 active:scale-[0.995] transition-all",
@@ -127,17 +145,29 @@ export function AttachmentRow({ attachment, onOpenPdf, resolveUrl, onDownloaded,
             </h4>
           </div>
           {compact ? (
-            <div className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground group-active:bg-accent group-active:text-accent-foreground transition-colors">
-              <Play className="h-4 w-4 fill-current" />
-            </div>
+            <button
+              type="button"
+              onClick={handleEyeClick}
+              disabled={busy}
+              aria-label={`Open full page: ${attachment.title || attachment.file_name}`}
+              className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all disabled:opacity-60"
+            >
+              <EyeIcon className="h-[18px] w-[18px]" />
+            </button>
           ) : (
-            <div className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-primary text-primary-foreground rounded-xl h-10 px-4 text-sm font-semibold transition-colors [@media(hover:hover)]:group-hover:bg-primary/90">
-              <Play className="h-4 w-4 fill-current" />
+            <button
+              type="button"
+              onClick={handleEyeClick}
+              disabled={busy}
+              aria-label={`Open full page: ${attachment.title || attachment.file_name}`}
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-primary text-primary-foreground rounded-xl h-10 px-4 text-sm font-semibold transition-colors [@media(hover:hover)]:hover:bg-primary/90 disabled:opacity-60"
+            >
+              <EyeIcon className="h-4 w-4" />
               View
-            </div>
+            </button>
           )}
         </div>
-      </button>
+      </div>
     ) : (
     <div
       className={cn(

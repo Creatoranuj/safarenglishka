@@ -28,7 +28,6 @@ import ScrollToTop from "./components/ScrollToTop";
 import ForceUpdateGate from "./components/ForceUpdateGate";
 import SplashHider from "./components/SplashHider";
 import OfflineBanner from "./components/common/OfflineBanner";
-import AdminEruda from "./components/AdminEruda";
 import RouteTransitions from "./components/RouteTransitions";
 import GlobalBottomNav from "./components/Layout/GlobalBottomNav";
 import EdgeSwipeIndicator from "./components/Layout/EdgeSwipeIndicator";
@@ -322,7 +321,6 @@ const App = () => (
         <LanguageProvider>
         <AuthProvider>
           <BatchProvider>
-            <AdminEruda />
             <TooltipProvider>
               <ConfirmDialogProvider>
               <Toaster />

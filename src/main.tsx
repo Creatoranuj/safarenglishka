@@ -1,11 +1,11 @@
 // Safar English - Entry Point
 
-// Install this synchronously before Eruda, CrashShield, Sentry, React, or
+// Install this synchronously before CrashShield, Sentry, React, or
 // pdf.js can load. pdf.js/React-PDF intentionally abort in-flight workers when
 // the user closes a PDF or when we switch from streaming → byte fallback; on
 // Android WebView/Firefox that lifecycle cancellation surfaces as an
 // `unhandledrejection` (`AbortError: The operation was aborted.`). It is not a
-// crash and must never reach Eruda/Sentry or trigger reload logic.
+// crash and must never reach Sentry or trigger reload logic.
 const NB_EXPECTED_ABORT_RE = /AbortError|AbortException|aborted a request|operation was aborted|worker was terminated|\baborted\b/i;
 try {
   window.addEventListener(
@@ -20,72 +20,6 @@ try {
     },
     { capture: true },
   );
-} catch { /* noop */ }
-
-// ── Admin Eruda early-boot + console buffer ────────────────────────
-// True frog-eye view: BEFORE any other import emits logs (crashShield,
-// sentry, nativeDebug, web-vitals), we (1) buffer every console.* call
-// and (2) kick off Eruda's dynamic import. When Eruda's init resolves,
-// we re-emit the buffered entries so they appear in the in-app panel.
-// Gated on a localStorage flag that AdminEruda.tsx writes after auth
-// resolves admin = true. Non-admins never trigger this path.
-try {
-  if (typeof window !== "undefined" && localStorage.getItem("nb_admin_eruda") === "1") {
-    type LogEntry = { level: "log" | "info" | "warn" | "error" | "debug"; args: unknown[]; t: number };
-    const buffer: LogEntry[] = [];
-    const MAX_BUFFER = 500;
-    const levels: LogEntry["level"][] = ["log", "info", "warn", "error", "debug"];
-    const original: Partial<Record<LogEntry["level"], (...a: unknown[]) => void>> = {};
-    levels.forEach((lvl) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      original[lvl] = (console as any)[lvl]?.bind(console);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (console as any)[lvl] = (...args: unknown[]) => {
-        if (buffer.length < MAX_BUFFER) buffer.push({ level: lvl, args, t: Date.now() });
-        original[lvl]?.(...args);
-      };
-    });
-    (window as unknown as { __nb_eruda_buffer?: LogEntry[] }).__nb_eruda_buffer = buffer;
-
-    import("eruda").then(({ default: eruda }) => {
-      try {
-        if (!(window as unknown as { __nb_eruda_loaded?: boolean }).__nb_eruda_loaded) {
-          eruda.init();
-          (window as unknown as { __nb_eruda_loaded?: boolean }).__nb_eruda_loaded = true;
-          // Eruda wraps console.error at init and becomes the outermost
-          // layer — our nativeDebug filter alone can't stop routine
-          // AbortError / Capacitor UNIMPLEMENTED noise from reaching Eruda's
-          // panel. Re-wrap once here so the same suppression logic applies
-          // to the Eruda console too. Idempotent — module guard prevents
-          // double-wrapping on HMR.
-          try {
-            // Static import below guarantees nativeDebug is already in the
-            // main chunk — reuse it directly (avoids Rolldown's "ineffective
-            // dynamic import" warning that comes from importing the same
-            // module both ways).
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const filter = (globalThis as unknown as { __nb_isExpectedConsoleNoise?: (args: unknown[]) => boolean }).__nb_isExpectedConsoleNoise;
-            const w = window as unknown as { __nb_eruda_filter_installed?: boolean };
-            if (filter && !w.__nb_eruda_filter_installed) {
-              w.__nb_eruda_filter_installed = true;
-              const orig = console.error.bind(console);
-              console.error = (...args: unknown[]) => {
-                if (filter(args)) return;
-                orig(...args);
-              };
-            }
-          } catch { /* noop */ }
-
-          // Replay buffered entries so admin sees pre-init boot logs.
-          original.log?.(`[admin] Eruda early-boot loaded — replaying ${buffer.length} buffered log(s).`);
-          buffer.forEach((e) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            original[e.level]?.(`[t+${e.t}]`, ...e.args);
-          });
-        }
-      } catch { /* noop */ }
-    }).catch(() => { /* noop */ });
-  }
 } catch { /* noop */ }
 
 // ── Lovable-preview iframe noise suppression ───────────────────────
@@ -112,14 +46,9 @@ try {
   }
 } catch { /* noop */ }
 
-// NOTE: the admin-Eruda early-boot block above intentionally runs exactly
-// once. A duplicate copy used to live here and caused every console.* call
-// to be wrapped twice (doubling log volume) plus a second `import("eruda")`
-// network request on cold boot. Do not re-add — see plan.md perf pass.
-
-
-
-
+// NOTE: the admin Eruda in-app DevTools overlay (and its early-boot console
+// buffer) was removed on request — the floating debug button must never
+// appear in the shipped app. Do not re-add.
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -136,26 +65,6 @@ import { logger } from "@/lib/logger";
 
 // Synchronous: needed before any other code so native console.log works.
 initNativeDebug();
-
-// Eruda — legacy QA flag path. Kept for non-admin QA builds that ship
-// with VITE_ENABLE_ERUDA=true. Admin-gated path lives in AdminEruda.tsx
-// + the early-boot block at the top of this file.
-if (import.meta.env.VITE_ENABLE_ERUDA === "true") {
-  import("eruda").then(({ default: eruda }) => {
-    try {
-      if (!(window as unknown as { __nb_eruda_loaded?: boolean }).__nb_eruda_loaded) {
-        eruda.init();
-        (window as unknown as { __nb_eruda_loaded?: boolean }).__nb_eruda_loaded = true;
-      }
-      const btn = document.querySelector(".eruda-entry-btn") as HTMLElement | null;
-      if (btn) btn.setAttribute("aria-label", "QA DevTools");
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.log("[QA] Eruda DevTools loaded — tap the floating button.");
-      }
-    } catch { /* noop */ }
-  }).catch(() => { /* noop */ });
-}
 
 // Crash shield — heartbeat watchdog + global rejection trap + resume guard.
 // Auto-reloads (cooldown-throttled) when the WebView freezes or its JS

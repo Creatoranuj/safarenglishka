@@ -227,7 +227,7 @@ const MyCourseDetail = () => {
         id: l.id, title: l.title, videoUrl: l.video_url, description: l.description,
         overview: l.overview, isLocked: l.is_locked, lectureType: l.lecture_type || "VIDEO",
         position: l.position || idx + 1, youtubeId: l.youtube_id, createdAt: l.created_at,
-        duration: l.duration, chapterId: l.chapter_id,
+        duration: l.duration ?? l.duration_seconds ?? null, chapterId: l.chapter_id,
         classPdfUrl: l.class_pdf_url ?? null,
         thumbnailUrl: l.thumbnail_url ?? null,
       }));
