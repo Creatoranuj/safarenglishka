@@ -373,7 +373,9 @@ jobs:
           elif [ "$MAP_COUNT" = "0" ]; then
             echo "::notice::No sourcemaps emitted — nothing to upload."
           else
-            curl -sL https://sentry.io/get-cli/ | bash
+            # The runner image may already ship sentry-cli; the installer
+            # exits 1 in that case, which would kill this step under `set -e`.
+            command -v sentry-cli >/dev/null 2>&1 || curl -sL https://sentry.io/get-cli/ | bash
             sentry-cli releases new "$SENTRY_RELEASE" || true
             sentry-cli sourcemaps inject dist
             sentry-cli sourcemaps upload --release "$SENTRY_RELEASE" dist
@@ -823,7 +825,11 @@ jobs:
             exit 0
           fi
           # Install sentry-cli only when we actually need it (~15s cold).
-          curl -sL https://sentry.io/get-cli/ | bash
+          # Already installed by the sourcemap step above (or preinstalled on
+          # the runner). The installer exits 1 when it finds an existing
+          # binary, which under `set -euo pipefail` failed the whole build
+          # AFTER the APK was already built. Only install when missing.
+          command -v sentry-cli >/dev/null 2>&1 || curl -sL https://sentry.io/get-cli/ | bash
 
           echo "→ Creating Sentry release $SENTRY_RELEASE"
           sentry-cli releases new "$SENTRY_RELEASE"
