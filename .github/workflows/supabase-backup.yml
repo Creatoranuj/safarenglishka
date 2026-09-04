@@ -1,0 +1,89 @@
+name: Supabase Backup
+
+# Nightly JSON snapshot of the critical tables via scripts/backup-supabase.mjs.
+# Artifact retained 90 days. Opens an alert issue if a run fails
+# (matches supabase-keepalive.yml behaviour).
+
+on:
+  schedule:
+    - cron: '30 2 * * *'   # daily 02:30 UTC (08:00 IST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # needed only to open an alert issue if the backup fails
+
+concurrency:
+  group: supabase-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Snapshot critical tables
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check secrets
+        id: gate
+        env:
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BASE: ${{ secrets.SUPABASE_URL }}
+          BASE_ALT: ${{ secrets.VITE_SUPABASE_URL }}
+        run: |
+          if [ -z "$SERVICE_KEY" ] || { [ -z "$BASE" ] && [ -z "$BASE_ALT" ]; }; then
+            echo "::warning::Backup skipped - add repo secrets SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run backup
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/backup-supabase.mjs backup
+
+      - name: Upload snapshot
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 90
+
+      - name: Open alert issue on failure
+        if: failure() && steps.gate.outputs.ready == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Supabase nightly backup failed';
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'backup',
+            });
+            const body = `Backup run failed: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const hit = existing.find((i) => i.title === title);
+            if (hit) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: hit.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['backup'],
+              });
+            }
