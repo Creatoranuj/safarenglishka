@@ -11,6 +11,22 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.6.1] - 2026-09-04
+
+### Added
+- Admin panel -> **Admins** tab: per-admin **role change** (Student / Teacher / Admin)
+  and **Delete account** action with a destructive confirmation dialog.
+- `supabase/functions/admin-delete-user` - admin-only edge function that verifies the caller's
+  admin role with the service role, then deletes `user_roles`, `profiles` and the
+  `auth.users` identity, and writes an `audit_log` entry.
+
+### Security
+- Server-side guards mirror the UI guards: self-delete and deleting/demoting the last
+  remaining admin are rejected by the edge function, so calling it directly cannot
+  lock the project out of admin access.
+
+---
+
 ## [v1.6.0] — 2026-09-04
 
 ### Added
