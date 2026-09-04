@@ -11,6 +11,30 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.5.0] — 2026-09-04
+
+### Added
+- `docs/AUDIT-v1.5.0.md` — consolidated multi-skill audit (architecture, Supabase/RLS,
+  red team, payments, performance, mobile, console hygiene) with per-area ratings,
+  reproducible evidence for every finding and a prioritised fix plan.
+- `docs/RAZORPAY-LIVE-SWITCH.md` — Test → Live runbook: which secrets change, live
+  webhook setup, the seven functions to redeploy, ₹1 smoke test and rollback.
+
+### Security
+- Revoked `INSERT`, `UPDATE` and `DELETE` grants for the anonymous role on ten public
+  tables (`app_installs`, `content_reports`, `document_progress`, `landing_courses`,
+  `landing_testimonials`, `leads`, `lesson_chapters`, `lesson_quiz_markers`,
+  `live_reminders`, `study_materials`). RLS already blocked these writes; the grants
+  were wider than the policies, so a future permissive policy could have opened them.
+  Read access is unchanged.
+
+### Notes
+- Audit result: **no CRITICAL and no HIGH findings.** Remaining items are MEDIUM/LOW.
+- Owner action: enable leaked-password protection in the Supabase Auth dashboard.
+- Razorpay remains in **test mode**; the live switch is documented only, not executed.
+
+---
+
 ## [v1.4.9] — 2026-09-04
 
 ### Added
