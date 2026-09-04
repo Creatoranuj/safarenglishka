@@ -287,6 +287,16 @@ const Admin = () => {
   [usersList, userSearch, userRoleFilter]);
 
   const activeTeachers = useMemo(() => usersList.filter(u => u.role === 'teacher'), [usersList]);
+  // SECURITY: admin accounts are the highest-privilege identities in the app.
+  // A dedicated chip makes "how many accounts hold admin access" visible at a
+  // glance instead of hiding behind the Users role filter.
+  const adminAccounts = useMemo(
+    () => usersList
+      .filter(u => u.role === 'admin')
+      .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()),
+    [usersList],
+  );
+
   const promotableStudents = useMemo(() =>
     usersList.filter(u => (u.role === 'student' || !u.role) &&
       (u.full_name?.toLowerCase().includes(teacherSearch.toLowerCase()) || u.email?.toLowerCase().includes(teacherSearch.toLowerCase()))
@@ -678,6 +688,8 @@ const Admin = () => {
             <TabsTrigger data-tab="live" value="live" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1 text-destructive data-[state=active]:text-destructive"><Radio className="h-4 w-4" />Live</TabsTrigger>
             <TabsTrigger data-tab="payments" value="payments" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1">Payments <Badge variant="destructive" className="ml-1">{statsData.pendingPayments}</Badge></TabsTrigger>
             <TabsTrigger data-tab="users" value="users" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1">Users</TabsTrigger>
+            <TabsTrigger data-tab="admins" value="admins" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><ShieldAlert className="h-4 w-4" />Admins <Badge variant="destructive" className="ml-1">{adminAccounts.length}</Badge></TabsTrigger>
+
             <TabsTrigger data-tab="teachers" value="teachers" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><GraduationCap className="h-4 w-4" />Teachers</TabsTrigger>
             <TabsTrigger data-tab="library" value="library" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><Library className="h-4 w-4" />Library</TabsTrigger>
             <TabsTrigger data-tab="doubts" value="doubts" className="py-2 min-h-[44px] shrink-0 snap-start scroll-mx-1 gap-1"><MessageSquare className="h-4 w-4" />Doubts</TabsTrigger>
@@ -971,6 +983,92 @@ const Admin = () => {
               </CardContent>
             </Card>
           </>)}</TabsContent>
+
+          {/* ADMIN ACCOUNTS TAB (security) */}
+          <TabsContent value="admins">{activeTab === 'admins' && (<>
+            <Card className="border shadow-sm">
+              <CardHeader className="bg-destructive/5 border-b pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-destructive">
+                      <ShieldAlert className="h-5 w-5" /> Admin Access ({adminAccounts.length})
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Accounts with full admin privileges. Keep this list as small as possible.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={fetchDashboardData} disabled={loading}>
+                      <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => exportToCSV(adminAccounts.map(u => ({
+                      full_name: u.full_name, email: u.email, mobile: u.mobile, created_at: u.created_at
+                    })), 'admin_accounts')}>
+                      <Download className="h-4 w-4 mr-1" /> Export
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {adminAccounts.length > 3 && (
+                  <div className="px-4 py-3 text-xs text-destructive bg-destructive/5 border-b">
+                    {adminAccounts.length} accounts hold admin access. Review and revoke anything unexpected.
+                  </div>
+                )}
+                <ScrollArea className="h-[500px]">
+                  {adminAccounts.length === 0 ? (
+                    <div className="text-center py-12">
+                      <ShieldAlert className="h-12 w-12 text-destructive mx-auto mb-3 opacity-20" />
+                      <p className="text-muted-foreground">No admin accounts found.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {adminAccounts.map((u) => (
+                        <div key={u.id} className="p-4 md:p-5 hover:bg-muted/40 transition-colors flex items-center gap-4">
+                          <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center text-destructive font-bold text-base flex-shrink-0">
+                            {u.full_name?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase() || '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-foreground truncate text-sm flex items-center gap-2">
+                              {u.full_name || 'Unnamed User'}
+                              {u.id === user?.id && <Badge variant="secondary" className="text-[10px]">You</Badge>}
+                            </h3>
+                            <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                            {u.mobile && <p className="text-xs text-muted-foreground/70">{u.mobile}</p>}
+                          </div>
+                          <div className="text-right text-xs text-muted-foreground hidden md:block shrink-0">
+                            <p>Admin since</p>
+                            <p className="font-medium text-foreground/70">
+                              {u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                            </p>
+                          </div>
+                          <div className="shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive"
+                              disabled={roleChanging[u.id] || u.id === user?.id || adminAccounts.length <= 1}
+                              onClick={async () => {
+                                if (!(await confirmAction({
+                                  title: `Revoke admin access for ${u.full_name || u.email}? They will become a student.`,
+                                  variant: "destructive",
+                                }))) return;
+                                await handleChangeRole(u.id, 'student');
+                              }}
+                            >
+                              {roleChanging[u.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserX className="h-4 w-4 mr-1" /> Revoke</>}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </>)}</TabsContent>
+
+
 
           {/* TEACHERS TAB */}
           <TabsContent value="teachers">{activeTab === 'teachers' && (<>
