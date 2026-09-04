@@ -11,6 +11,46 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.6.0] — 2026-09-04
+
+### Added
+- `scripts/check-anon-grants.mjs` + `.github/workflows/anon-grants-guard.yml` —
+  automated regression guard that fails if the logged-out `anon` role ever regains
+  `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` on a public table. Runs on every migration
+  push and nightly at 03:00 UTC. Also available as `bun run guard:anon-grants`.
+- `public.anon_write_grants()` — admin-only (`service_role`) introspection function
+  backing that guard (`supabase/migrations/20260904014500_anon_write_grants_guard_fn.sql`).
+- `docs/CHECKLIST-v1.6.0.md` — the completed checklist and run-list evidence for this
+  release, plus the remaining owner actions.
+
+### Security
+- Revoked the leftover `TRUNCATE` grant for the anonymous role on 14 public tables
+  (`app_installs`, `content_reports`, `dependency_scan_reports`, `document_progress`,
+  `landing_courses`, `landing_testimonials`, `lesson_chapters`, `lesson_quiz_markers`,
+  `lesson_video_meta`, `live_reminders`, `payment_events`, `pdf_proxy_metrics`,
+  `profiles_public`, `study_materials`). The v1.5.0 pass revoked write grants but not
+  `TRUNCATE`; the new guard found it. Read access is unchanged.
+
+### Performance
+- Added `loading="lazy"` + `decoding="async"` to 60 `<img>` tags across 31 files.
+  Above-the-fold brand marks (`BrandMark`, `Header`, landing `Index` logo) stay
+  `eager` so the LCP element is not deferred. `Picture` and `SmartImage` already
+  handled this via their `priority` prop and are untouched.
+
+### Fixed
+- `scripts/guards/guards.mjs` — the `supabase-rls` guard now strips SQL comments
+  before scanning, so a migration that only *mentions* `SECURITY DEFINER` in an
+  explanatory comment is no longer reported as a finding
+  (`20260903131824_audit_log_client_insert_lockdown.sql` was a false positive).
+
+### Notes
+- Razorpay is still in **test mode**. All payment code reads `RAZORPAY_KEY_ID` /
+  `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` from Supabase function secrets
+  only — no test key is hardcoded anywhere — so the Test → Live switch is a
+  secrets-and-webhooks change with no code change. See `docs/RAZORPAY-LIVE-SWITCH.md`.
+
+---
+
 ## [v1.5.0] — 2026-09-04
 
 ### Added

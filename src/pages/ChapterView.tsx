@@ -270,7 +270,7 @@ const ChapterView = () => {
                   >
                     <div className="aspect-video rounded-lg bg-muted mb-2 overflow-hidden flex items-center justify-center">
                       {chapter.thumbnailUrl ? (
-                        <img src={chapter.thumbnailUrl} alt={chapter.title} className="w-full h-full object-cover" />
+                        <img loading="lazy" decoding="async" src={chapter.thumbnailUrl} alt={chapter.title} className="w-full h-full object-cover" />
                       ) : (
                         <span className="text-2xl font-bold text-muted-foreground">{chapter.code}</span>
                       )}

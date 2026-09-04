@@ -24,6 +24,8 @@ const BatchSelector = () => {
           <div className="flex items-center gap-3">
             {selectedBatch?.image_url && (
               <img
+                loading="lazy"
+                decoding="async"
                 src={selectedBatch.image_url}
                 alt=""
                 className="h-7 w-7 rounded-lg object-cover flex-shrink-0"
@@ -45,6 +47,8 @@ const BatchSelector = () => {
               <div className="flex items-center gap-3">
                 {batch.image_url && (
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={batch.image_url}
                     alt=""
                     className="h-6 w-6 rounded-md object-cover flex-shrink-0"

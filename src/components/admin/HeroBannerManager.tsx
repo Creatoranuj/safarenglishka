@@ -373,6 +373,8 @@ function SortableBannerRow({
           >
             {banner.image_url && (
               <img
+                loading="lazy"
+                decoding="async"
                 src={banner.image_url}
                 alt=""
                 className="w-full h-full object-cover opacity-60"
@@ -574,6 +576,8 @@ function BannerForm({
           {data.image_url && (
             <div className="mt-2 aspect-[12/5] w-full rounded-md overflow-hidden border bg-muted">
               <img
+                loading="lazy"
+                decoding="async"
                 src={data.image_url.startsWith("storage://") ? "" : data.image_url}
                 alt="Preview"
                 className="w-full h-full object-cover"
@@ -610,6 +614,8 @@ function BannerPreview({ banner }: { banner: HeroBanner }) {
     >
       {banner.image_url && (
         <img
+          loading="lazy"
+          decoding="async"
           src={banner.image_url}
           alt=""
           className="absolute right-0 bottom-0 h-full max-w-[35%] object-contain object-bottom opacity-80"

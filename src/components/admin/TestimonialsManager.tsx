@@ -136,7 +136,7 @@ const TestimonialsManager = () => {
             <div>
               <Label>Avatar image</Label>
               {draft.avatar_url && (
-                <img src={draft.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover mb-2 border" />
+                <img loading="lazy" decoding="async" src={draft.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover mb-2 border" />
               )}
               <div className="flex gap-2">
                 <Input placeholder="https://…" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} />
@@ -176,7 +176,7 @@ const TestimonialsManager = () => {
                     </div>
                   </div>
                   <div>
-                    {editDraft.avatar_url && <img src={editDraft.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover mb-2 border" />}
+                    {editDraft.avatar_url && <img loading="lazy" decoding="async" src={editDraft.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover mb-2 border" />}
                     <div className="flex gap-2">
                       <Input placeholder="https://…" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} />
                       <Button type="button" size="sm" variant="outline" onClick={() => handleImport("edit")} disabled={importing}>
@@ -193,7 +193,7 @@ const TestimonialsManager = () => {
               ) : (
                 <div key={t.id} className="flex items-center gap-3 rounded-lg border p-3">
                   {t.avatar_url ? (
-                    <img src={t.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover border" />
+                    <img loading="lazy" decoding="async" src={t.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover border" />
                   ) : (
                     <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold">
                       {t.student_name.charAt(0)}

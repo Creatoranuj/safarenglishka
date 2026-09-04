@@ -28,6 +28,8 @@ export function QuizQuestionImage({ src }: { src: string }) {
   if (!url) return <div className="rounded-lg max-h-64 w-full mb-4 border bg-muted animate-pulse h-40" />;
   return (
     <img
+      loading="lazy"
+      decoding="async"
       src={url}
       alt="Question"
       className="rounded-lg max-h-64 w-full object-contain mb-4 border"
@@ -40,5 +42,5 @@ export function QuizQuestionThumb({ src }: { src: string }) {
   const { url, status, refetch } = useResolvedContentUrl(src);
   if (status === "error") return <ErrorFallback onRetry={refetch} small />;
   if (!url) return <div className="rounded max-h-20 h-12 w-16 mb-1 border bg-muted animate-pulse" />;
-  return <img src={url} alt="Question" className="rounded max-h-20 object-contain mb-1 border" onError={() => refetch()} />;
+  return <img loading="lazy" decoding="async" src={url} alt="Question" className="rounded max-h-20 object-contain mb-1 border" onError={() => refetch()} />;
 }

@@ -444,7 +444,9 @@ const MahimaVideoPlayer: React.FC<MahimaVideoPlayerProps> = ({ videoUrl, onEnded
               title="Play/Pause"
               aria-label="Play/Pause"
             >
-              <img 
+              <img
+                loading="lazy"
+                decoding="async" 
                 src={playButtonIcon} 
                 alt="Play/Pause" 
                 className="w-20 h-20 hover:scale-110 transition-transform duration-300"

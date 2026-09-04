@@ -36,6 +36,8 @@ const Header = ({ onMenuClick, userName }: HeaderProps) => {
         </Button>
         <Link to="/" onClick={() => { void selectionHaptic(); }} className="flex items-center gap-2 active:scale-[0.98] transition-transform duration-150" style={{ padding: '0 2px' }}>
           <img
+            loading="eager"
+            decoding="async"
             src={logoIcon}
             alt="Safar English"
             className="h-8 w-8 rounded-full object-contain"

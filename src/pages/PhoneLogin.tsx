@@ -13,7 +13,7 @@ const PhoneLogin = () => {
     <div className="min-h-dvh flex flex-col items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-sm space-y-6 text-center">
         <div className="flex flex-col items-center gap-3">
-          <img src={logo} alt="Safar English" className="h-16 w-16 rounded-full object-contain" />
+          <img loading="lazy" decoding="async" src={logo} alt="Safar English" className="h-16 w-16 rounded-full object-contain" />
           <h1 className="text-2xl font-bold text-foreground">Phone sign-in</h1>
         </div>
 

@@ -594,7 +594,7 @@ const LectureListing = () => {
             <ViewSkeletons view={viewMode} />
           ) : filteredLessons.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <img src={doubtsIcon} alt="Empty" width={64} height={64} className="w-16 h-16 object-contain mb-4 opacity-60" />
+              <img loading="lazy" decoding="async" src={doubtsIcon} alt="Empty" width={64} height={64} className="w-16 h-16 object-contain mb-4 opacity-60" />
               <p className="text-muted-foreground font-medium">No content found</p>
               <p className="text-sm text-muted-foreground/70 mt-1">Try switching tabs or check back later.</p>
             </div>

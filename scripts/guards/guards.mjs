@@ -239,7 +239,11 @@ const supabaseRls = guard({
     for (const f of readdirSync(dir).filter((n) => n.endsWith(".sql"))) {
       const isNew = f.slice(0, 8) >= CUTOFF;
       const full = join(dir, f);
-      const sql = readFileSync(full, "utf8");
+      // Strip SQL comments first: a migration that only *mentions*
+      // "SECURITY DEFINER" in an explanatory comment is not a finding.
+      const sql = readFileSync(full, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/--[^\n]*/g, "");
       const lower = sql.toLowerCase();
       const bucket = isNew ? offenders : legacy;
       const createsPublicTable = /create\s+table\s+(if\s+not\s+exists\s+)?(public\.)?[a-z_]/i.test(sql);

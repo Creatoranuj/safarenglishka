@@ -97,7 +97,7 @@ const Login = () => {
       <div className="flex-1 flex flex-col justify-center px-5 sm:px-8 py-8 sm:py-12 lg:px-16">
         <div className="mx-auto w-full max-w-md">
           <Link to="/" className="flex items-center gap-3 mb-8">
-            <img src={logo} alt="Safar English" className="h-14 w-14 rounded-full object-contain" width={56} height={56} />
+            <img loading="lazy" decoding="async" src={logo} alt="Safar English" className="h-14 w-14 rounded-full object-contain" width={56} height={56} />
             <span className="font-bold text-2xl text-foreground">Safar English</span>
           </Link>
 

@@ -155,7 +155,7 @@ export default function UniversalFileViewer(props: Props) {
         )}
         {kind === "IMAGE" && (
           <div className="flex h-full w-full items-center justify-center overflow-auto">
-            <img src={url} alt={title} className="max-h-full max-w-full object-contain" />
+            <img loading="lazy" decoding="async" src={url} alt={title} className="max-h-full max-w-full object-contain" />
           </div>
         )}
         {kind === "VIDEO" && videoEmbed && (

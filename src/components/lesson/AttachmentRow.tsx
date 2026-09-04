@@ -124,6 +124,7 @@ export function AttachmentRow({ attachment, onOpenPdf, onOpenPdfFull, resolveUrl
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : (
               <img
+                loading="lazy"
                 src={pdfIconSvg}
                 alt="PDF"
                 width={compact ? 30 : 40}

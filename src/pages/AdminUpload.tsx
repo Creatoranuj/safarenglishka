@@ -851,7 +851,7 @@ const AdminUpload = () => {
               </div>
             ) : thumbnailFile && thumbnailUrl ? (
               <div className="flex flex-col items-center gap-2">
-                <img src={thumbnailUrl} alt="Thumbnail" className="w-32 h-20 object-cover rounded-lg border" />
+                <img loading="lazy" decoding="async" src={thumbnailUrl} alt="Thumbnail" className="w-32 h-20 object-cover rounded-lg border" />
                 <p className="text-xs text-primary font-medium">{thumbnailFile.name}</p>
                 <p className="text-[10px] text-muted-foreground">Drop or tap to replace</p>
               </div>
@@ -867,7 +867,7 @@ const AdminUpload = () => {
           <>
             <Input placeholder="https://... thumbnail image URL" value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} className="h-11" />
             {thumbnailUrl && (
-              <img src={thumbnailUrl} alt="Thumbnail preview" className="w-24 h-16 object-cover rounded-lg border mt-1" />
+              <img loading="lazy" decoding="async" src={thumbnailUrl} alt="Thumbnail preview" className="w-24 h-16 object-cover rounded-lg border mt-1" />
             )}
           </>
         )}
@@ -1105,7 +1105,7 @@ const AdminUpload = () => {
       <header className="bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 text-white shadow-lg">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="Safar English" className="h-10 w-10 rounded-xl" />
+            <img loading="lazy" decoding="async" src={logo} alt="Safar English" className="h-10 w-10 rounded-xl" />
             <div>
               <h1 className="text-lg font-bold flex items-center gap-2">
                 <Shield className="h-5 w-5 text-purple-400" />
@@ -1228,7 +1228,7 @@ const AdminUpload = () => {
                                   <Label className="text-xs">Thumbnail URL</Label>
                                   <Input placeholder="https://... thumbnail image" value={editChapterThumbnailUrl} onChange={e => setEditChapterThumbnailUrl(e.target.value)} className="h-10 text-base" />
                                   {editChapterThumbnailUrl && (
-                                    <img src={editChapterThumbnailUrl} alt="Preview" className="w-16 h-12 object-cover rounded-md border mt-1.5" />
+                                    <img loading="lazy" decoding="async" src={editChapterThumbnailUrl} alt="Preview" className="w-16 h-12 object-cover rounded-md border mt-1.5" />
                                   )}
                                 </div>
                                 <div className="flex gap-2">
@@ -1247,7 +1247,7 @@ const AdminUpload = () => {
                                   onClick={() => setSelectedChapterId(ch.id)}
                                 >
                                   {ch.thumbnail_url ? (
-                                    <img src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                                    <img loading="lazy" decoding="async" src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
                                   ) : (
                                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
                                       {ch.position || "—"}
@@ -1513,7 +1513,7 @@ const AdminUpload = () => {
                                           <Label className="text-xs flex items-center gap-1"><ImageIcon className="h-3 w-3 text-primary" /> Thumbnail</Label>
                                           <Input value={editThumbnailUrl} onChange={e => setEditThumbnailUrl(e.target.value)} className="h-10 text-base" placeholder="https://... thumbnail image URL" />
                                           {editThumbnailUrl && (
-                                            <img src={editThumbnailUrl} alt="Thumbnail preview" className="w-24 h-16 object-cover rounded-lg border mt-1" />
+                                            <img loading="lazy" decoding="async" src={editThumbnailUrl} alt="Thumbnail preview" className="w-24 h-16 object-cover rounded-lg border mt-1" />
                                           )}
                                         </div>
                                         <div className="space-y-1.5">

@@ -198,7 +198,9 @@ const BunnyStreamPlayer = memo(({
 
       {videoEnded && (
         <div className="absolute z-[52] pointer-events-none select-none bottom-3 left-3 animate-in fade-in duration-500">
-          <img src={nbLogo} alt="NB"
+          <img
+            loading="lazy"
+            decoding="async" src={nbLogo} alt="NB"
             className="rounded-full shadow-lg"
             style={{ height: isPortrait ? "28px" : "32px", width: isPortrait ? "28px" : "32px", opacity: 0.85 }}
             draggable={false} />

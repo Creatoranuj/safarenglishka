@@ -890,6 +890,8 @@ const AdminQuizManager = () => {
                     {(q.image_url || q._imageFile) ? (
                       <div className="relative rounded-lg overflow-hidden border bg-muted/30">
                         <img
+                          loading="lazy"
+                          decoding="async"
                           src={q._imageFile ? questionImagePreviews[q._uid] : q.image_url}
                           alt="Question"
                           className="max-h-40 w-full object-contain"

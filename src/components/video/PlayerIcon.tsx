@@ -22,6 +22,8 @@ const SRC: Record<PlayerIconKind, string> = {
  */
 export const PlayerIcon = ({ kind, className, alt }: PlayerIconProps) => (
   <img
+    loading="lazy"
+    decoding="async"
     src={SRC[kind]}
     alt={alt ?? kind}
     draggable={false}

@@ -69,6 +69,8 @@ const EndScreenOverlay = ({
       <div className="relative mb-6">
         <div className="absolute inset-0 rounded-full bg-brand-accent/20 blur-2xl animate-pulse scale-150" />
         <img
+          loading="lazy"
+          decoding="async"
           src={nbLogo}
           alt="Safar English"
           className="relative h-16 w-16 rounded-2xl shadow-2xl"

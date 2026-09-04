@@ -270,7 +270,7 @@ const Dashboard = () => {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-background">
         <div className="relative">
-          <img src={appLogo} alt="Loading" className="h-16 w-16 rounded-2xl sadhguru-loader-logo" />
+          <img loading="lazy" decoding="async" src={appLogo} alt="Loading" className="h-16 w-16 rounded-2xl sadhguru-loader-logo" />
           <div className="absolute inset-0 rounded-2xl border-2 border-primary/40 sadhguru-loader-ring" />
         </div>
         <p className="mt-4 text-muted-foreground font-medium">Please wait &amp; take a deep breath</p>

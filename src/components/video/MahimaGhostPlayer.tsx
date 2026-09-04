@@ -1003,6 +1003,8 @@ const MahimaGhostPlayer = memo(({
               <div className="relative flex items-center justify-center" style={{ width: 96, height: 96 }}>
                 <div className="mahima-stealth-spinner" />
                 <img
+                  loading="lazy"
+                  decoding="async"
                   src={nbBirdLogo}
                   alt="Safar English"
                   className="absolute rounded-full"
@@ -1133,6 +1135,8 @@ const MahimaGhostPlayer = memo(({
           }}
         >
           <img
+            loading="lazy"
+            decoding="async"
             src={birdLogo}
             alt=""
             className="rounded-full"
@@ -1166,6 +1170,8 @@ const MahimaGhostPlayer = memo(({
           }}
         >
           <img
+            loading="lazy"
+            decoding="async"
             src={bharatBirdLogo}
             alt=""
             draggable={false}
@@ -1515,7 +1521,7 @@ const MahimaGhostPlayer = memo(({
                 {isPlaying ? (
                   <Pause className="w-14 h-14 md:w-16 md:h-16 text-player-on-surface" fill="white" style={{ filter: 'drop-shadow(0px 4px 12px rgba(0,0,0,0.9))' }} />
                 ) : (
-                  <img src={playButtonIcon} alt="Play/Pause" className="w-16 h-16 md:w-20 md:h-20" style={{ filter: 'drop-shadow(0px 4px 12px rgba(0,0,0,0.9))' }} />
+                  <img loading="lazy" decoding="async" src={playButtonIcon} alt="Play/Pause" className="w-16 h-16 md:w-20 md:h-20" style={{ filter: 'drop-shadow(0px 4px 12px rgba(0,0,0,0.9))' }} />
                 )}
               </button>
 

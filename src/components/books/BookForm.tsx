@@ -164,7 +164,7 @@ export function BookForm({ open, onOpenChange, book, onSubmit, isSubmitting }: B
             <div className="flex items-start gap-4">
               <div className="w-24 h-36 bg-muted rounded-md overflow-hidden flex items-center justify-center border">
                 {coverPreview ? (
-                  <img src={coverPreview} alt="Cover preview" className="w-full h-full object-cover" />
+                  <img loading="lazy" decoding="async" src={coverPreview} alt="Cover preview" className="w-full h-full object-cover" />
                 ) : (
                   <ImageIcon className="h-8 w-8 text-muted-foreground" />
                 )}

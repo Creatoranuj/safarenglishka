@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.6.0",
   "type": "module",
   "engines": {
     "node": "22.x"
@@ -25,7 +25,8 @@
     "guard:all": "node scripts/check-design-tokens.mjs && node scripts/check-console-usage.mjs && node scripts/guards/run.mjs",
     "guard:skills": "node scripts/guards/run.mjs",
     "guard:skills:block": "node scripts/guards/run.mjs --mode block",
-    "guard:skills:snapshot": "node scripts/guards/run.mjs --snapshot"
+    "guard:skills:snapshot": "node scripts/guards/run.mjs --snapshot",
+    "guard:anon-grants": "node scripts/check-anon-grants.mjs"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "7.0.1",

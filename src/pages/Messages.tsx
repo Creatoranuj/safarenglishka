@@ -413,6 +413,8 @@ const Messages = () => {
                             {/* Attachment */}
                             {msg.attachmentUrl && msg.attachmentType === "image" && (
                               <img
+                                loading="lazy"
+                                decoding="async"
                                 src={msg.attachmentUrl}
                                 alt="Attachment"
                                 className="rounded-lg mb-2 max-w-full max-h-48 object-cover cursor-pointer"

@@ -51,7 +51,7 @@ const ForgotPassword = () => {
     <div className="min-h-dvh bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <Link to="/" className="flex items-center gap-3 mb-8 justify-center">
-          <img src={logo} alt="Safar English" className="h-12 w-12 rounded-xl" />
+          <img loading="lazy" decoding="async" src={logo} alt="Safar English" className="h-12 w-12 rounded-xl" />
           <span className="font-bold text-2xl text-foreground">Safar English</span>
         </Link>
 

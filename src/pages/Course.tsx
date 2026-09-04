@@ -274,7 +274,7 @@ const CoursePage = () => {
           {course.teacher_name && (
             <div className="mt-4 flex items-start gap-3 p-3 rounded-xl border border-border bg-muted/30">
               {course.teacher_avatar_url ? (
-                <img src={course.teacher_avatar_url} alt={course.teacher_name} className="h-12 w-12 rounded-full object-cover" />
+                <img loading="lazy" decoding="async" src={course.teacher_avatar_url} alt={course.teacher_name} className="h-12 w-12 rounded-full object-cover" />
               ) : (
                 <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
                   {course.teacher_name.charAt(0)}

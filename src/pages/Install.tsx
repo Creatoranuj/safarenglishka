@@ -229,7 +229,7 @@ const Install = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <img src={appLogo} alt="Safar Englishka" className="h-9 w-9 rounded-xl object-cover" />
+          <img loading="lazy" decoding="async" src={appLogo} alt="Safar Englishka" className="h-9 w-9 rounded-xl object-cover" />
           <span className="font-semibold text-foreground">Install App</span>
         </div>
       </div>
@@ -239,6 +239,8 @@ const Install = () => {
         {/* Hero gradient section */}
         <div className="relative overflow-hidden rounded-2xl mt-5 mb-6 bg-gradient-to-br from-primary/20 via-primary/10 to-background border border-primary/20 px-6 pt-8 pb-6 text-center">
           <img
+            loading="lazy"
+            decoding="async"
             src={appLogo}
             alt="Safar Englishka"
             className="mx-auto h-32 w-32 object-contain drop-shadow-2xl mb-3 rounded-3xl"
@@ -310,6 +312,8 @@ const Install = () => {
               <div className="flex-shrink-0 flex flex-col items-center gap-2">
                 <div className="p-3 bg-white rounded-xl border border-border shadow-md">
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={apkQrUrl}
                     alt="QR Code — scan to download APK"
                     className="w-[180px] h-[180px]"

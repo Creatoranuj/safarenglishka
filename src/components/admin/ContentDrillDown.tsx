@@ -689,7 +689,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                 ) : (
                   <Input placeholder="Paste icon URL" value={newChapterIcon} onChange={e => setNewChapterIcon(e.target.value)} className="flex-1 h-8 text-xs" />
                 )}
-                {newChapterIcon && <img src={newChapterIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
+                {newChapterIcon && <img loading="lazy" decoding="async" src={newChapterIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
               </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => handleCreateChapter()} disabled={isCreatingChapter || uploadingIcon}>
@@ -743,7 +743,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                     <div className="flex items-center justify-between">
                       <button onClick={() => setSelectedChapterId(ch.id)} className="flex items-center gap-3 flex-1 text-left">
                         {ch.thumbnail_url ? (
-                          <img src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                          <img loading="lazy" decoding="async" src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
                             {index + 1}
@@ -863,7 +863,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
               ) : (
                 <Input placeholder="Paste icon URL" value={newSubFolderIcon} onChange={e => setNewSubFolderIcon(e.target.value)} className="flex-1 h-8 text-xs" />
               )}
-              {newSubFolderIcon && <img src={newSubFolderIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
+              {newSubFolderIcon && <img loading="lazy" decoding="async" src={newSubFolderIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreateSubFolder} disabled={isCreatingChapter || uploadingIcon}>
@@ -891,7 +891,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                   <div className="flex items-center justify-between">
                     <button onClick={() => setSelectedSubChapterId(sc.id)} className="flex items-center gap-3 flex-1 text-left">
                       {sc.thumbnail_url ? (
-                        <img src={sc.thumbnail_url} alt="" className="w-7 h-7 rounded-lg object-cover" />
+                        <img loading="lazy" decoding="async" src={sc.thumbnail_url} alt="" className="w-7 h-7 rounded-lg object-cover" />
                       ) : (
                         <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
                           {idx + 1}
@@ -1033,7 +1033,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                   </Button>
                 </label>
                 {editLessonData.thumbnail_url && (
-                  <img src={editLessonData.thumbnail_url} alt="thumb" className="h-10 w-10 rounded object-cover border" />
+                  <img loading="lazy" decoding="async" src={editLessonData.thumbnail_url} alt="thumb" className="h-10 w-10 rounded object-cover border" />
                 )}
               </div>
             </div>

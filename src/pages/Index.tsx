@@ -113,7 +113,7 @@ const Navigation = memo(({ isAuthenticated }: { isAuthenticated: boolean }) => {
           <SheetContent side="right" className="w-72">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
-                <img src={logo} alt="Logo" className="h-8 w-8 rounded-lg" />
+                <img loading="eager" decoding="async" src={logo} alt="Logo" className="h-8 w-8 rounded-lg" />
                 <span className="font-serif" style={{ fontFamily: "var(--font-serif)" }}>Safar English</span>
               </SheetTitle>
             </SheetHeader>

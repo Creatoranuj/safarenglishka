@@ -1099,7 +1099,7 @@ const Admin = () => {
                           onChange={(e) => setCourseThumbnailUrl(e.target.value)}
                         />
                         {courseThumbnailUrl && (
-                          <img src={courseThumbnailUrl} alt="Preview" className="h-20 w-auto rounded-lg object-cover border" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                          <img loading="lazy" decoding="async" src={courseThumbnailUrl} alt="Preview" className="h-20 w-auto rounded-lg object-cover border" onError={(e) => (e.currentTarget.style.display = 'none')} />
                         )}
                       </div>
                     )}
@@ -1163,7 +1163,7 @@ const Admin = () => {
                                   <div className="space-y-2">
                                     <Input placeholder="https://example.com/image.jpg" value={editThumbnailUrl} onChange={(e) => setEditThumbnailUrl(e.target.value)} />
                                     {editThumbnailUrl && (
-                                      <img src={editThumbnailUrl} alt="Thumbnail preview" className="h-20 w-auto rounded-lg object-cover border" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                                      <img loading="lazy" decoding="async" src={editThumbnailUrl} alt="Thumbnail preview" className="h-20 w-auto rounded-lg object-cover border" onError={(e) => (e.currentTarget.style.display = 'none')} />
                                     )}
                                   </div>
                                 )}

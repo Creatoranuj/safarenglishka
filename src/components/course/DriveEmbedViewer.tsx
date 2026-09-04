@@ -168,7 +168,7 @@ const DriveEmbedViewer = memo(({ url, title, onDownloaded }: DriveEmbedViewerPro
             style={{ height: "52px", background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}
             aria-hidden="true"
           >
-            <img src={nbLogo} alt="Safar English" className="h-7 w-auto opacity-90" draggable={false} />
+            <img loading="lazy" decoding="async" src={nbLogo} alt="Safar English" className="h-7 w-auto opacity-90" draggable={false} />
             <span className="text-sm font-semibold text-foreground truncate">Safar English</span>
           </div>
         )}
@@ -177,7 +177,7 @@ const DriveEmbedViewer = memo(({ url, title, onDownloaded }: DriveEmbedViewerPro
           className="absolute bottom-3 right-3 z-20 flex items-center gap-2 select-none pointer-events-none"
           aria-hidden="true"
         >
-          <img src={nbLogo} alt="" className="h-7 sm:h-9 w-auto opacity-40 drop-shadow-md" draggable={false} />
+          <img loading="lazy" decoding="async" src={nbLogo} alt="" className="h-7 sm:h-9 w-auto opacity-40 drop-shadow-md" draggable={false} />
         </div>
       </div>
     </div>

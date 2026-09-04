@@ -23,6 +23,7 @@ const BrandMarkInner = ({
   title = "Safar English",
 }: BrandMarkProps) => (
   <img
+    loading="eager"
     src={NB_MARK_SRC}
     width={size}
     height={size}

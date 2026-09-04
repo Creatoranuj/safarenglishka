@@ -462,7 +462,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
             <div className="flex items-center justify-end gap-2 mb-2">
               <p className="font-semibold text-sm text-foreground">Safar English Agent 🤖</p>
               <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <img src={logoIcon} className="w-3.5 h-3.5 object-contain" alt="" />
+                <img loading="lazy" decoding="async" src={logoIcon} className="w-3.5 h-3.5 object-contain" alt="" />
               </div>
             </div>
             {/* Body */}
@@ -495,7 +495,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
           )}
           aria-label="Login to chat with Safar English Agent"
         >
-          <img src={fabLogo} className="w-9 h-9 object-contain" alt="Safar English Agent" />
+          <img loading="lazy" decoding="async" src={fabLogo} className="w-9 h-9 object-contain" alt="Safar English Agent" />
           {/* Lock badge */}
           <span className="absolute -top-1 -right-1 w-5 h-5 bg-card rounded-full border-2 border-border flex items-center justify-center shadow-sm">
             <Lock className="h-2.5 w-2.5 text-muted-foreground" />
@@ -527,7 +527,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
         )}
         aria-label="Open Safar English Agent"
       >
-        <img src={fabLogo} className="w-14 h-14 object-contain drop-shadow-md" alt="Safar English Agent" />
+        <img loading="lazy" decoding="async" src={fabLogo} className="w-14 h-14 object-contain drop-shadow-md" alt="Safar English Agent" />
       </button>
 
       {/* Full-page chat overlay */}
@@ -556,7 +556,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
                 className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background px-3 h-9 text-sm font-medium text-foreground"
                 aria-label="Safar Agent"
               >
-                <img src={fabLogo} alt="" className="h-4 w-4 rounded-full object-contain" />
+                <img loading="lazy" decoding="async" src={fabLogo} alt="" className="h-4 w-4 rounded-full object-contain" />
                 <span className="truncate max-w-[140px]">Safar Agent</span>
               </div>
 
@@ -595,7 +595,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
                 <div key={msg.id} className={cn("flex gap-2.5", msg.role === "user" ? "justify-end" : "justify-start")}>
                   {msg.role === "assistant" && (
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <img src={logoIcon} className="w-5 h-5 object-contain" alt="Sarthi" />
+                      <img loading="lazy" decoding="async" src={logoIcon} className="w-5 h-5 object-contain" alt="Sarthi" />
                     </div>
                   )}
                   <div className="flex flex-col gap-1 max-w-[92%]">
@@ -603,6 +603,8 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
                     {msg.imageUrl && (
                       <div className="rounded-xl overflow-hidden border border-border">
                         <img
+                          loading="lazy"
+                          decoding="async"
                           src={msg.imageUrl}
                           alt="Uploaded doubt"
                           className="max-w-full max-h-48 object-contain bg-muted"
@@ -682,7 +684,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
               {(isLoading || isUploading) && (
                 <div className="flex gap-2.5 justify-start">
                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <img src={logoIcon} className="w-5 h-5 object-contain" alt="Sarthi" />
+                    <img loading="lazy" decoding="async" src={logoIcon} className="w-5 h-5 object-contain" alt="Sarthi" />
                   </div>
                   <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
                     {isUploading ? (
@@ -727,7 +729,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
             <div className="px-3 pb-1 shrink-0 flex justify-end">
               <div className="relative inline-flex items-center">
                 {uploadedFile.type === "image" ? (
-                  <img src={uploadedFile.previewUrl} alt="preview" className="w-14 h-14 rounded-xl object-cover border border-border" />
+                  <img loading="lazy" decoding="async" src={uploadedFile.previewUrl} alt="preview" className="w-14 h-14 rounded-xl object-cover border border-border" />
                 ) : (
                   <div className="w-14 h-14 rounded-xl border border-border bg-card flex items-center justify-center">
                     <span className="text-[10px] text-muted-foreground px-1 text-center truncate max-w-full">{uploadedFile.file.name}</span>
