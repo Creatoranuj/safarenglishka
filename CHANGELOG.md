@@ -11,6 +11,31 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.4.9] — 2026-09-04
+
+### Added
+- `docs/BACKUP-AND-CREDENTIALS.md` — Supabase backup workflow guide (Hindi),
+  Service Role key security explanation, restore steps, full credentials audit
+  and a step-by-step Razorpay Test → Live switch plan.
+
+### Fixed
+- `.github/workflows/supabase-backup.yml`: corrected `secrets.VITE_SUPABASE_URL`
+  and `secrets.SUPABASE_SERVICE_ROLE_KEY` references and artifact
+  `retention-days` indentation; workflow now dispatches and completes green.
+
+### Changed
+- Test transaction history cleared from the database
+  (`razorpay_payments`, `payment_events`, `payment_requests`, `webhook_events`).
+  Student enrollments were left untouched.
+- Repository secret `SUPABASE_SERVICE_ROLE_KEY` added so nightly backups run.
+
+### Notes
+- Razorpay remains in **test mode**. Live-mode switch is documented only,
+  not executed — see section 5 of the new doc.
+
+
+---
+
 ## [v1.4.8] — 2026-09-04
 
 ### Added
