@@ -9,9 +9,18 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+---
+
+## [v1.4.8] — 2026-09-04
+
 ### Added
 - Stripe payment integration (configuration pending)
 - GitHub Actions automated APK build workflow
+- Supabase nightly backup workflow (`.github/workflows/supabase-backup.yml`) driving
+  `scripts/backup-supabase.mjs`, with a secret gate, 90-day artifact retention and an
+  automatic alert issue on failure
+- Supabase keepalive workflow to prevent free-tier 7-day inactivity pause
+- Release/QA process docs (`docs/PROJECT-PROCESSES.md`, `docs/RELEASE-QA-CHECKLIST.md`)
 
 ### Changed
 - Complete rebrand from "Sadguru Coaching Classes" to "Safar English"
@@ -19,6 +28,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Session management stripped for instant login
 - Fetch retry with exponential backoff on Supabase client
 - Vercel deployed to Mumbai region (bom1)
+
+### Fixed
+- Keepalive probe switched to a narrow anon-readable SELECT — the PostgREST root
+  now returns 401 for anon keys and was raising a false alarm issue every 5 days
+
+### Notes
+- `v1.4.7` was tagged without a matching `package.json` bump; `package.json` moves
+  straight from `1.3.0` to `1.4.8` here so the file and the tags line up again.
 
 ---
 
