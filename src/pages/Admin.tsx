@@ -247,6 +247,37 @@ const Admin = () => {
     }
   };
 
+  // --- ACCOUNT DELETION (admin only) ---
+  // Auth identities can only be removed with the service role, so this goes
+  // through the admin-delete-user edge function which re-verifies the caller,
+  // blocks self-delete and blocks removing the last remaining admin.
+  const [deletingUser, setDeletingUser] = useState<Record<string, boolean>>({});
+  const handleDeleteAccount = async (target: UserWithRole) => {
+    if (target.id === user?.id) { toast.error("You cannot delete your own account"); return; }
+    if (!(await confirmAction({
+      title: `Permanently delete ${target.full_name || target.email}?`,
+      description: "This removes their login, profile and role. This cannot be undone.",
+      variant: "destructive",
+    }))) return;
+    setDeletingUser(prev => ({ ...prev, [target.id]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-delete-user", {
+        body: { userId: target.id },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Delete failed");
+      setUsersList(prev => prev.filter(u => u.id !== target.id));
+      toast.success("Account deleted");
+    } catch (err: any) {
+      reportError(err, { surface: "Admin.deleteAccount" });
+      toast.error("Failed to delete account: " + (err?.message || "Unknown error"));
+    } finally {
+      setDeletingUser(prev => ({ ...prev, [target.id]: false }));
+    }
+  };
+
+
+
   // --- FILTERED DATA ---
   const allPaymentsUnified = useMemo(() => {
     const manual = payments.map(p => ({
@@ -1042,12 +1073,35 @@ const Admin = () => {
                               {u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                             </p>
                           </div>
-                          <div className="shrink-0">
+                          <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                            {/* Role change — self and last-admin are locked to avoid lockout. */}
+                            <Select
+                              value={u.role || 'admin'}
+                              disabled={roleChanging[u.id] || deletingUser[u.id] || u.id === user?.id || adminAccounts.length <= 1}
+                              onValueChange={async (v) => {
+                                if (v === (u.role || 'admin')) return;
+                                if (!(await confirmAction({
+                                  title: `Change role of ${u.full_name || u.email} to ${v}?`,
+                                  description: v === 'admin' ? undefined : "They will lose admin access immediately.",
+                                  variant: "destructive",
+                                }))) return;
+                                await handleChangeRole(u.id, v);
+                              }}
+                            >
+                              <SelectTrigger className="w-28 h-8 text-xs">
+                                {roleChanging[u.id] ? <span className="text-muted-foreground">Saving…</span> : <SelectValue />}
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="student">Student</SelectItem>
+                                <SelectItem value="teacher">Teacher</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <Button
                               variant="outline"
                               size="sm"
                               className="text-destructive"
-                              disabled={roleChanging[u.id] || u.id === user?.id || adminAccounts.length <= 1}
+                              disabled={roleChanging[u.id] || deletingUser[u.id] || u.id === user?.id || adminAccounts.length <= 1}
                               onClick={async () => {
                                 if (!(await confirmAction({
                                   title: `Revoke admin access for ${u.full_name || u.email}? They will become a student.`,
@@ -1058,7 +1112,16 @@ const Admin = () => {
                             >
                               {roleChanging[u.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserX className="h-4 w-4 mr-1" /> Revoke</>}
                             </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={deletingUser[u.id] || roleChanging[u.id] || u.id === user?.id || adminAccounts.length <= 1}
+                              onClick={() => handleDeleteAccount(u)}
+                            >
+                              {deletingUser[u.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Trash2 className="h-4 w-4 mr-1" /> Delete</>}
+                            </Button>
                           </div>
+
                         </div>
                       ))}
                     </div>
