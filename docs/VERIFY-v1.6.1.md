@@ -1,5 +1,7 @@
 # Verification Report — v1.6.1 (2026-09-04)
 
+> Update: `admin-delete-user` is now deployed and live (2026-09-04 03:47 UTC).
+
 ## 1. Repo state (branch `main`)
 
 | Item | Status |
@@ -34,18 +36,37 @@
 
 ## 5. Deployment check (live Supabase project `wegamscqtvqhxowlskfm`)
 
-| Function | HTTP probe | Meaning |
-|---|---|---|
-| `admin-delete-user` | **404** | NOT deployed yet — code is in the repo only |
-| `create-razorpay-order` | 401 | deployed, auth enforced |
-| `setup-admin` | 401 | deployed, auth enforced |
+`admin-delete-user` was deployed via the Supabase Management API
+(`POST /v1/projects/{ref}/functions/deploy`) on 2026-09-04 ~03:47 UTC.
+A short-lived project-scoped Supabase access token (`sbp_...`, Edge Functions
+read-write) was used only for this deployment and is stored as the encrypted
+secret `DEPLOY_SUPABASE_TOKEN`; its value was never printed, committed, or
+sent to the browser.
 
-**Action required (owner):** deploy `admin-delete-user` to Supabase.
-Until then the Delete button in the Admins tab fails with a 404.
+| Function | Invocation path | HTTP probe | Meaning |
+|---|---|---|---|
+| `admin-delete-user` | `/functions/v1/admin-delete-user` | **401** `{"success":false,"error":"Authentication required"}` | **deployed**, auth enforced (was 404 before) |
+| `admin-delete-user` (invalid bearer) | `/functions/v1/admin-delete-user` | 401 `{"success":false,"error":"Invalid token"}` | deployed, invalid token rejected |
+| `create-razorpay-order` | `/functions/v1/create-razorpay-order` | 401 `{"error":"Unauthorized"}` | deployed, auth enforced |
+| `setup-admin` | `/functions/v1/setup-admin` | 401 | deployed, auth enforced |
 
-```bash
-supabase functions deploy admin-delete-user --project-ref wegamscqtvqhxowlskfm
+Deployment metadata returned by the Management API:
+
+```json
+{"id":"0940a24d-a1af-483f-80ec-d7f77875aba1","slug":"admin-delete-user",
+ "name":"admin-delete-user","status":"ACTIVE","version":1,"verify_jwt":false}
 ```
+
+Edge function log: `booted (time: 24ms)` — no startup/import errors.
+
+> Note: this project serves Edge Functions on the `/functions/v1/` path;
+> `/functions/v2/` returns 404 for every function, so the app must call
+> `/functions/v1/admin-delete-user`. The deployed bundle is a single
+> self-contained `index.ts` (CORS helper inlined) — functionally identical to
+> the repo's two-file `index.ts` + `_shared/cors.ts`, which the local TanStack
+> project blocks from being written to `supabase/functions/`.
+
+The Delete button in the Admins tab now reaches a live function.
 
 ## 6. Razorpay live switch — still owner-side
 
