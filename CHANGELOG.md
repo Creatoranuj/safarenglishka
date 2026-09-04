@@ -11,6 +11,25 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.6.2] - 2026-09-04
+
+### Changed
+- `admin-delete-user` edge function **deployed live** on Supabase project `wegamscqtvqhxowlskfm`
+  (status ACTIVE, version 1). The Delete account / role change actions in the Admins tab now
+  work end-to-end; before this the function existed only in the repo and returned 404.
+- Deploy bundle inlines the shared CORS helper, because the Management API deploy path could not
+  resolve `../_shared/cors.ts`. Repository source keeps the two-file layout.
+
+### Docs
+- `docs/VERIFY-v1.6.1.md` updated with the deployment evidence and the correct
+  `/functions/v1/` invocation path (401 for unauthenticated / invalid token, clean boot log).
+
+### Notes
+- Razorpay still in **test mode** — live switch is owner-side (Supabase Edge Function secrets +
+  live webhook). Leaked-password protection still pending in Supabase -> Authentication -> Policies.
+
+---
+
 ## [v1.6.1] - 2026-09-04
 
 ### Added
